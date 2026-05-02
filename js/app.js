@@ -289,9 +289,12 @@ function render() {
   root.innerHTML = `
     <div class="app-shell">
       <header class="app-header">
-        <div>
-          <p class="eyebrow">ABYSS Host Event Manager</p>
-          <h1>ホスイベ勤怠・予約管理</h1>
+        <div class="brand-lockup">
+          <img class="brand-mark" src="assets/abyss-logo.png" alt="ABYSS">
+          <div>
+            <p class="eyebrow">ABYSS Host Event Manager</p>
+            <h1>ホスイベ勤怠・予約管理</h1>
+          </div>
         </div>
         <nav class="top-nav" aria-label="主要画面">
           <span class="sync-pill ${syncStatus.mode}">${escapeHtml(syncStatus.text)}</span>
@@ -875,25 +878,28 @@ function renderAdminDashboard() {
         <div class="mini-panel">
           <h3>ホスト勤怠</h3>
           ${renderAttendanceSummaryCards(view.eventId, { detailType: "hostAttendance" })}
+          ${renderDashboardDetailFor("hostAttendance")}
         </div>
         <div class="mini-panel">
           <h3>内勤勤怠</h3>
           ${renderStaffAttendanceSummaryCards(view.eventId, { detailType: "staffAttendance" })}
+          ${renderDashboardDetailFor("staffAttendance")}
         </div>
         <div class="mini-panel">
           <h3>予約枠</h3>
           ${renderSeatStatusList(view.eventId, { detailType: "seat" })}
+          ${renderDashboardDetailFor("seat")}
         </div>
         <div class="mini-panel">
           <h3>シャンパン・タワー</h3>
           ${renderDrinkStatusList(view.eventId, { detailType: "drink" })}
+          ${renderDashboardDetailFor("drink")}
         </div>
         <div class="mini-panel">
           <h3>確認が必要</h3>
           ${issues.length ? `<ul class="issue-list">${issues.map((issue) => `<li class="${issue.level}">⚠ ${escapeHtml(issue.text)}</li>`).join("")}</ul>` : `<p class="empty">要確認項目はありません。</p>`}
         </div>
       </div>
-      ${renderDashboardDetail()}
     </section>
   `;
 }
@@ -1398,6 +1404,10 @@ function renderDashboardDetail() {
   if (type === "seat") return renderSeatDetail(key);
   if (type === "drink") return renderDrinkDetail(key);
   return "";
+}
+
+function renderDashboardDetailFor(type) {
+  return view.dashboardDetailType === type ? renderDashboardDetail() : "";
 }
 
 function renderHostAttendanceDetail(status) {
