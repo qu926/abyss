@@ -691,6 +691,10 @@ textarea:focus {
   gap: 6px;
 }
 
+.bulk-status-options.is-staff {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .bulk-status-option {
   position: relative;
   display: block;

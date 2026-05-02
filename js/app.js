@@ -429,47 +429,35 @@ function bulkAttendanceLabel(status) {
 
 function renderStaffAttendancePage() {
   const event = findEvent(state, view.eventId);
+  const events = getActiveEvents(state)
+    .filter((item) => item.status !== "休み")
+    .sort((a, b) => a.event_date.localeCompare(b.event_date));
   const staffMembers = getActiveStaffMembers(state);
-  const entry = getStaffAttendanceEntry(state, view.eventId, view.staffAttendanceMemberId);
-  const isHoliday = event?.status === "休み";
   return `
     <section class="page-grid two-col">
       <div class="panel">
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Staff</p>
-            <h2>内勤入力</h2>
+            <h2>内勤まとめ入力</h2>
           </div>
-          ${statusPill(event?.status || "未設定")}
+          <span class="capacity ok">${events.length}日分</span>
         </div>
-        ${isHoliday ? `<div class="notice muted">${formatDateLabel(event.event_date)} は休みです。この日は内勤出勤入力対象外です。</div>` : ""}
-        ${staffMembers.length ? `
-          <form class="stack" data-action="save-staff-attendance">
-            <label>
-              <span>対象日</span>
-              <select name="event_date_id" data-role="event-select">
-                ${renderEventOptions(view.eventId)}
-              </select>
-            </label>
-            <label>
-              <span>内勤名</span>
-              <select name="staff_member_id" data-role="staff-attendance-member-select">
-                ${staffMembers.map((member) => option(member.id, member.display_name, member.id === view.staffAttendanceMemberId)).join("")}
-              </select>
-            </label>
-            <label>
-              <span>出欠</span>
-              <select name="status" ${isHoliday ? "disabled" : ""}>
-                ${STAFF_ATTENDANCE_STATUSES.map((status) => option(status, status, status === (entry?.status || "出勤"))).join("")}
-              </select>
-            </label>
-            <label>
-              <span>メモ</span>
-              <textarea name="memo" rows="3" ${isHoliday ? "disabled" : ""}>${escapeHtml(entry?.memo || "")}</textarea>
-            </label>
-            <button class="primary-button" type="submit" ${isHoliday ? "disabled" : ""}>登録 / 更新する</button>
-          </form>
-        ` : `<p class="empty">内勤スタッフが未登録です。運営画面の「内勤一覧」から追加してください。</p>`}
+        <form class="bulk-attendance-form" data-action="save-bulk-staff-attendance">
+          <label>
+            <span>内勤名</span>
+            <select name="staff_member_id" data-role="staff-attendance-member-select">
+              ${staffMembers.map((member) => option(member.id, member.display_name, member.id === view.staffAttendanceMemberId)).join("")}
+            </select>
+          </label>
+          <p class="plan-note">各日程の内勤出勤をまとめて選択できます。何も選んでいない日は未入力のままです。</p>
+          ${staffMembers.length && events.length ? `
+            <div class="bulk-attendance-list">
+              ${events.map((item) => renderBulkStaffAttendanceRow(item)).join("")}
+            </div>
+            <button class="primary-button" type="submit">まとめて登録 / 更新する</button>
+          ` : `<p class="empty">入力対象の日程または内勤スタッフがありません。運営画面の「内勤一覧」から追加してください。</p>`}
+        </form>
       </div>
       <aside class="panel">
         <div class="panel-heading">
@@ -477,7 +465,14 @@ function renderStaffAttendancePage() {
             <p class="eyebrow">Staff Status</p>
             <h2>${event ? formatDateLabel(event.event_date) : "対象日未設定"}</h2>
           </div>
+          ${statusPill(event?.status || "未設定")}
         </div>
+        <label>
+          <span>確認する日付</span>
+          <select data-role="event-select">
+            ${renderEventOptions(view.eventId)}
+          </select>
+        </label>
         ${renderStaffAttendanceSummaryCards(view.eventId)}
         <div class="subsection">
           <h3>内勤未入力</h3>
@@ -485,6 +480,31 @@ function renderStaffAttendancePage() {
         </div>
       </aside>
     </section>
+  `;
+}
+
+function renderBulkStaffAttendanceRow(event) {
+  const entry = getStaffAttendanceEntry(state, event.id, view.staffAttendanceMemberId);
+  return `
+    <div class="bulk-attendance-row">
+      <input type="hidden" name="attendance_event_id" value="${event.id}">
+      <div class="bulk-date">
+        <h3>${formatDateLabel(event.event_date)}</h3>
+        <span>${formatDateTime(event.reservation_open_at)} 解放</span>
+      </div>
+      <div class="bulk-status-options is-staff" role="radiogroup" aria-label="${formatDateLabel(event.event_date)} の内勤出勤">
+        ${STAFF_ATTENDANCE_STATUSES.map((status) => `
+          <label class="bulk-status-option status-${status}">
+            <input name="status_${event.id}" type="radio" value="${status}" ${entry?.status === status ? "checked" : ""}>
+            <span>${bulkAttendanceLabel(status)}</span>
+          </label>
+        `).join("")}
+      </div>
+      <label class="bulk-memo">
+        <span>メモ</span>
+        <input name="memo_${event.id}" value="${escapeAttr(entry?.memo || "")}" placeholder="任意">
+      </label>
+    </div>
   `;
 }
 
@@ -1571,6 +1591,10 @@ function handleSubmit(event) {
     const result = upsertStaffAttendance(state, data);
     applyResult(result, "内勤出勤を保存しました。");
   }
+  if (action === "save-bulk-staff-attendance") {
+    saveBulkStaffAttendance(form);
+    return;
+  }
   if (action === "site-login") {
     if (data.password === state.settings.adminPassword) {
       siteUnlocked = true;
@@ -1668,6 +1692,45 @@ function saveBulkAttendance(form) {
     return;
   }
   saveState(nextState, `${savedCount}日分の勤怠を保存しました。`);
+}
+
+function saveBulkStaffAttendance(form) {
+  const formData = new FormData(form);
+  const staffMemberId = String(formData.get("staff_member_id") || "");
+  const eventIds = formData.getAll("attendance_event_id").map(String);
+  let nextState = state;
+  let savedCount = 0;
+  const errors = [];
+  if (!staffMemberId) {
+    showToast("内勤名を選択してください。", "error");
+    return;
+  }
+  view.staffAttendanceMemberId = staffMemberId;
+  for (const eventId of eventIds) {
+    const status = formData.get(`status_${eventId}`);
+    if (!status) continue;
+    const result = upsertStaffAttendance(nextState, {
+      event_date_id: eventId,
+      staff_member_id: staffMemberId,
+      status,
+      memo: formData.get(`memo_${eventId}`) || "",
+    });
+    if (!result.ok) {
+      errors.push(...(result.errors || ["保存できませんでした。"]));
+      continue;
+    }
+    nextState = result.state;
+    savedCount += 1;
+  }
+  if (errors.length) {
+    showToast(errors.join(" / "), "error");
+    return;
+  }
+  if (!savedCount) {
+    showToast("出欠を選択してください。", "error");
+    return;
+  }
+  saveState(nextState, `${savedCount}日分の内勤出勤を保存しました。`);
 }
 
 function handleChange(event) {
