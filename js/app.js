@@ -617,7 +617,16 @@ function renderHostAttendanceListPage() {
         </div>
       </div>
       ${event?.status === "休み" ? `<div class="notice muted">この日は休みです。出勤一覧の対象外です。</div>` : ""}
-      ${renderAttendanceSummaryCards(view.eventId)}
+      <div class="attendance-list-summaries">
+        <section class="mini-panel">
+          <h3>ホスト</h3>
+          ${renderAttendanceSummaryCards(view.eventId)}
+        </section>
+        <section class="mini-panel">
+          <h3>内勤</h3>
+          ${renderStaffAttendanceSummaryCards(view.eventId)}
+        </section>
+      </div>
       <div class="attendance-list-grid">
         ${HOST_ATTENDANCE_LIST_STATUSES.map((status) => renderHostAttendanceListSection(status)).join("")}
       </div>
@@ -626,7 +635,7 @@ function renderHostAttendanceListPage() {
 }
 
 function renderHostAttendanceListSection(status) {
-  const items = getHostAttendanceListItems(status);
+  const items = getCombinedAttendanceListItems(status);
   return `
     <section class="mini-panel attendance-list-section status-${status}">
       <div class="section-title">
@@ -638,17 +647,28 @@ function renderHostAttendanceListSection(status) {
   `;
 }
 
-function getHostAttendanceListItems(status) {
+function getCombinedAttendanceListItems(status) {
   if (status === "未入力") {
-    return getMissingUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: user.role || "ホスト" }));
+    return [
+      ...getMissingUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: `ホスト / ${user.role || "ホスト"}` })),
+      ...getMissingStaffMembers(state, view.eventId).map((member) => ({ title: member.display_name, meta: `内勤 / ${member.staff_type || "内勤"}` })),
+    ];
   }
   if (status === "長期休暇") {
-    return getVacationExemptUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: "長期休暇中" }));
+    return getVacationExemptUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: `ホスト / ${user.role || "ホスト"} / 長期休暇中` }));
   }
-  return getActiveUsers(state)
+  const hostItems = getActiveUsers(state)
     .map((user) => ({ user, entry: getAttendanceEntry(state, view.eventId, user.id) }))
     .filter(({ entry }) => entry?.status === status)
-    .map(({ user }) => ({ title: user.display_name, meta: user.role || "ホスト" }));
+    .map(({ user }) => ({ title: user.display_name, meta: `ホスト / ${user.role || "ホスト"}` }));
+  if (status === "体入") return hostItems;
+  return [
+    ...hostItems,
+    ...getActiveStaffMembers(state)
+      .map((member) => ({ member, entry: getStaffAttendanceEntry(state, view.eventId, member.id) }))
+      .filter(({ entry }) => entry?.status === status)
+      .map(({ member }) => ({ title: member.display_name, meta: `内勤 / ${member.staff_type || "内勤"}` })),
+  ];
 }
 
 function renderReservationPage(adminMode) {
@@ -1957,6 +1977,7 @@ function saveBulkAttendance(form) {
   const formData = new FormData(form);
   const userId = String(formData.get("user_id") || "");
   const eventIds = formData.getAll("attendance_event_id").map(String);
+  const selectedCount = eventIds.filter((eventId) => formData.get(`status_${eventId}`)).length;
   let nextState = state;
   let savedCount = 0;
   const errors = [];
@@ -1964,6 +1985,13 @@ function saveBulkAttendance(form) {
     showToast("ホスト名を選択してください。", "error");
     return;
   }
+  if (!selectedCount) {
+    showToast("出欠を選択してください。", "error");
+    return;
+  }
+  const user = findUser(state, userId);
+  const ok = window.confirm(`${user?.display_name || "選択中のホスト"} として ${selectedCount}日分の勤怠を保存します。名前は間違いありませんか？`);
+  if (!ok) return;
   view.attendanceUserId = userId;
   for (const eventId of eventIds) {
     const status = formData.get(`status_${eventId}`);
@@ -1985,10 +2013,6 @@ function saveBulkAttendance(form) {
     showToast(errors.join(" / "), "error");
     return;
   }
-  if (!savedCount) {
-    showToast("出欠を選択してください。", "error");
-    return;
-  }
   saveState(nextState, `${savedCount}日分の勤怠を保存しました。`);
 }
 
@@ -1996,6 +2020,7 @@ function saveBulkStaffAttendance(form) {
   const formData = new FormData(form);
   const staffMemberId = String(formData.get("staff_member_id") || "");
   const eventIds = formData.getAll("attendance_event_id").map(String);
+  const selectedCount = eventIds.filter((eventId) => formData.get(`status_${eventId}`)).length;
   let nextState = state;
   let savedCount = 0;
   const errors = [];
@@ -2003,6 +2028,13 @@ function saveBulkStaffAttendance(form) {
     showToast("内勤名を選択してください。", "error");
     return;
   }
+  if (!selectedCount) {
+    showToast("出欠を選択してください。", "error");
+    return;
+  }
+  const staffMember = findStaffMember(state, staffMemberId);
+  const ok = window.confirm(`${staffMember?.display_name || "選択中の内勤"} として ${selectedCount}日分の内勤出勤を保存します。名前は間違いありませんか？`);
+  if (!ok) return;
   view.staffAttendanceMemberId = staffMemberId;
   for (const eventId of eventIds) {
     const status = formData.get(`status_${eventId}`);
@@ -2022,10 +2054,6 @@ function saveBulkStaffAttendance(form) {
   }
   if (errors.length) {
     showToast(errors.join(" / "), "error");
-    return;
-  }
-  if (!savedCount) {
-    showToast("出欠を選択してください。", "error");
     return;
   }
   saveState(nextState, `${savedCount}日分の内勤出勤を保存しました。`);
