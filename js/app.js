@@ -79,6 +79,7 @@ const APP_CONFIG = window.ABYSS_CONFIG || {};
 
 const root = document.querySelector("#app");
 const toastRoot = document.querySelector("#toast");
+const HOST_ATTENDANCE_LIST_STATUSES = ["出勤", "欠席", "未定", "体入", "未入力", "長期休暇"];
 
 let state = loadState();
 let syncStatus = getInitialSyncStatus();
@@ -383,6 +384,7 @@ function render() {
           <span class="sync-pill ${syncStatus.mode}">${escapeHtml(syncStatus.text)}</span>
           ${navButton("attendance", "ホスト勤怠入力")}
           ${navButton("staffAttendance", "内勤勤怠入力")}
+          ${navButton("attendanceList", "出勤一覧")}
           ${navButton("reservation", "予約入力")}
           ${navButton("admin", "運営画面")}
         </nav>
@@ -423,6 +425,7 @@ function navButton(page, label) {
 
 function renderCurrentPage() {
   if (view.page === "staffAttendance") return renderStaffAttendancePage();
+  if (view.page === "attendanceList") return renderHostAttendanceListPage();
   if (view.page === "reservation") return renderReservationPage(false);
   if (view.page === "admin") return renderAdminPage();
   return renderAttendancePage();
@@ -595,6 +598,57 @@ function renderBulkStaffAttendanceRow(event) {
       </label>
     </div>
   `;
+}
+
+function renderHostAttendanceListPage() {
+  const event = findEvent(state, view.eventId);
+  return `
+    <section class="panel page-panel">
+      <div class="panel-heading wide-heading">
+        <div>
+          <p class="eyebrow">Attendance List</p>
+          <h2>${event ? formatDateLabel(event.event_date) : "出勤一覧"}</h2>
+        </div>
+        <div class="toolbar compact">
+          <select data-role="event-select" aria-label="対象日">
+            ${renderEventOptions(view.eventId)}
+          </select>
+          ${statusPill(event?.status || "未設定")}
+        </div>
+      </div>
+      ${event?.status === "休み" ? `<div class="notice muted">この日は休みです。出勤一覧の対象外です。</div>` : ""}
+      ${renderAttendanceSummaryCards(view.eventId)}
+      <div class="attendance-list-grid">
+        ${HOST_ATTENDANCE_LIST_STATUSES.map((status) => renderHostAttendanceListSection(status)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderHostAttendanceListSection(status) {
+  const items = getHostAttendanceListItems(status);
+  return `
+    <section class="mini-panel attendance-list-section status-${status}">
+      <div class="section-title">
+        <h3>${escapeHtml(status)}</h3>
+        <span class="inline-pill muted">${items.length}人</span>
+      </div>
+      ${renderDetailList(items, `${status}のホストはいません。`)}
+    </section>
+  `;
+}
+
+function getHostAttendanceListItems(status) {
+  if (status === "未入力") {
+    return getMissingUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: user.role || "ホスト" }));
+  }
+  if (status === "長期休暇") {
+    return getVacationExemptUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: "長期休暇中" }));
+  }
+  return getActiveUsers(state)
+    .map((user) => ({ user, entry: getAttendanceEntry(state, view.eventId, user.id) }))
+    .filter(({ entry }) => entry?.status === status)
+    .map(({ user }) => ({ title: user.display_name, meta: user.role || "ホスト" }));
 }
 
 function renderReservationPage(adminMode) {

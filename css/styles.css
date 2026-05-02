@@ -594,6 +594,37 @@ textarea:focus {
   gap: 14px;
 }
 
+.attendance-list-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.attendance-list-section {
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, rgba(14, 22, 35, 0.94), rgba(6, 10, 17, 0.94)),
+    var(--surface);
+  color: var(--text);
+}
+
+.attendance-list-section.status-出勤 {
+  border-color: rgba(112, 224, 137, 0.55);
+}
+
+.attendance-list-section.status-欠席 {
+  border-color: rgba(255, 108, 108, 0.55);
+}
+
+.attendance-list-section.status-未定 {
+  border-color: rgba(255, 212, 95, 0.55);
+}
+
+.attendance-list-section.status-体入 {
+  border-color: rgba(78, 161, 255, 0.55);
+}
+
 .mini-panel {
   display: grid;
   align-content: start;
@@ -1278,6 +1309,7 @@ textarea:focus {
 
   .two-col,
   .admin-layout,
+  .attendance-list-grid,
   .dashboard-grid,
   .split {
     grid-template-columns: 1fr;
