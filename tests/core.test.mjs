@@ -30,6 +30,7 @@ import {
   getReservationOpenAt,
   getReservationWarnings,
   getReservationsForEvent,
+  getRoles,
   getArchivedEvents,
   getActiveEvents,
   getSeatCounts,
@@ -45,10 +46,14 @@ import {
   normalizeDrinkPlan,
   normalizeReservation,
   todayString,
+  setRoleActive,
+  setUserActive,
   toLocalDateTimeString,
   upsertAttendance,
   upsertDrinkPlan,
   upsertReservation,
+  upsertRole,
+  upsertUser,
   upsertVacation,
   validateReservationPayload,
 } from '../js/core.js';
@@ -226,6 +231,50 @@ test('attendance upsert is immutable and summary tracks missing, present, absent
   );
   assert.equal(restResult.ok, false);
   assert.equal(restResult.state, undecidedResult.state);
+});
+
+test('hosts can be disabled without removing historical identity', () => {
+  const state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const user = getActiveUsers(state)[0];
+  const result = setUserActive(state, user.id, false, new Date('2026-05-02T10:00:00+09:00'));
+
+  assert.equal(result.ok, true);
+  assert.equal(state.users.find((item) => item.id === user.id).is_active, true);
+  assert.equal(result.state.users.find((item) => item.id === user.id).is_active, false);
+  assert.equal(result.state.users.find((item) => item.id === user.id).display_name, user.display_name);
+  assert.ok(!getActiveUsers(result.state).some((item) => item.id === user.id));
+
+  const enabled = setUserActive(result.state, user.id, true, new Date('2026-05-02T10:05:00+09:00'));
+  assert.equal(enabled.ok, true);
+  assert.ok(getActiveUsers(enabled.state).some((item) => item.id === user.id));
+});
+
+test('custom roles can be created, assigned, disabled, and restored', () => {
+  const state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const createdRole = upsertRole(state, { name: '幹部候補', is_active: true }, new Date('2026-05-02T10:00:00+09:00'));
+  assert.equal(createdRole.ok, true);
+  assert.ok(getRoles(createdRole.state).some((role) => role.name === '幹部候補'));
+
+  const user = getActiveUsers(createdRole.state)[0];
+  const secondRole = upsertRole(createdRole.state, { name: '相談役', is_active: true });
+  assert.equal(secondRole.ok, true);
+
+  const assigned = upsertUser(
+    secondRole.state,
+    { ...user, role: '幹部候補', is_active: true },
+    new Date('2026-05-02T10:05:00+09:00'),
+  );
+  assert.equal(assigned.ok, true);
+  assert.equal(assigned.user.role, '幹部候補');
+
+  const disabled = setRoleActive(assigned.state, '幹部候補', false, new Date('2026-05-02T10:10:00+09:00'));
+  assert.equal(disabled.ok, true);
+  assert.ok(!getRoles(disabled.state).some((role) => role.name === '幹部候補'));
+  assert.ok(getRoles(disabled.state, true).some((role) => role.name === '幹部候補' && role.is_active === false));
+
+  const restored = setRoleActive(disabled.state, '幹部候補', true, new Date('2026-05-02T10:15:00+09:00'));
+  assert.equal(restored.ok, true);
+  assert.ok(getRoles(restored.state).some((role) => role.name === '幹部候補'));
 });
 
 test('reservation normalization validates slots, trims guest names, clamps counts, and detects empty drafts', () => {
