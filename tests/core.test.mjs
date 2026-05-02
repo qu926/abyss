@@ -7,6 +7,7 @@ import {
   EVENT_STATUSES,
   RESERVATION_SEAT_ORDER,
   SEAT_TYPES,
+  STAFF_ATTENDANCE_STATUSES,
   TIME_SLOTS,
   TIME_SLOT_LABELS,
   archiveFinishedEvents,
@@ -15,6 +16,7 @@ import {
   deleteDrinkPlan,
   deleteReservation,
   findReservationBySlot,
+  getActiveStaffMembers,
   getActiveUsers,
   getAttendanceEntriesForEvent,
   getAttendanceEntry,
@@ -26,6 +28,7 @@ import {
   getDrinkTotals,
   getGroupLabels,
   getLimitStatus,
+  getMissingStaffMembers,
   getMissingUsers,
   getReservationOpenAt,
   getReservationWarnings,
@@ -35,6 +38,8 @@ import {
   getActiveEvents,
   getSeatCounts,
   getSlotKey,
+  getStaffAttendanceEntry,
+  getStaffAttendanceSummary,
   getVacationExemptUsers,
   isEventArchived,
   isAfterEventCutoff,
@@ -47,12 +52,15 @@ import {
   normalizeReservation,
   todayString,
   setRoleActive,
+  setStaffMemberActive,
   setUserActive,
   toLocalDateTimeString,
   upsertAttendance,
   upsertDrinkPlan,
   upsertReservation,
   upsertRole,
+  upsertStaffAttendance,
+  upsertStaffMember,
   upsertUser,
   upsertVacation,
   validateReservationPayload,
@@ -275,6 +283,73 @@ test('custom roles can be created, assigned, disabled, and restored', () => {
   const restored = setRoleActive(disabled.state, '幹部候補', true, new Date('2026-05-02T10:15:00+09:00'));
   assert.equal(restored.ok, true);
   assert.ok(getRoles(restored.state).some((role) => role.name === '幹部候補'));
+});
+
+test('internal staff attendance is managed separately from host attendance', () => {
+  const state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const event = activeEvent(state);
+  const hostMissingCount = getMissingUsers(state, event.id).length;
+
+  const createdStaff = upsertStaffMember(
+    state,
+    {
+      display_name: '内勤太郎',
+      kana: 'ないきんたろう',
+      staff_type: '内勤',
+      is_active: true,
+      note: 'front',
+    },
+    new Date('2026-05-02T10:00:00+09:00'),
+  );
+  assert.equal(createdStaff.ok, true);
+  assert.equal(getActiveStaffMembers(state).length, 0);
+  assert.equal(getActiveStaffMembers(createdStaff.state).length, 1);
+  assert.equal(getMissingUsers(createdStaff.state, event.id).length, hostMissingCount);
+  assert.deepEqual(getStaffAttendanceSummary(createdStaff.state, event.id), {
+    出勤: 0,
+    欠席: 0,
+    未定: 0,
+    未入力: 1,
+  });
+  assert.equal(getMissingStaffMembers(createdStaff.state, event.id).length, 1);
+
+  const attended = upsertStaffAttendance(
+    createdStaff.state,
+    {
+      event_date_id: event.id,
+      staff_member_id: createdStaff.staffMember.id,
+      status: STAFF_ATTENDANCE_STATUSES[0],
+      memo: '受付',
+    },
+    new Date('2026-05-02T10:05:00+09:00'),
+  );
+  assert.equal(attended.ok, true);
+  assert.equal(getStaffAttendanceEntry(attended.state, event.id, createdStaff.staffMember.id).memo, '受付');
+  assert.deepEqual(getStaffAttendanceSummary(attended.state, event.id), {
+    出勤: 1,
+    欠席: 0,
+    未定: 0,
+    未入力: 0,
+  });
+  assert.equal(getMissingStaffMembers(attended.state, event.id).length, 0);
+  assert.ok(getDashboardIssues(createdStaff.state, event.id).some((issue) => issue.text === '内勤未入力 1人'));
+
+  const disabled = setStaffMemberActive(attended.state, createdStaff.staffMember.id, false, new Date('2026-05-02T10:10:00+09:00'));
+  assert.equal(disabled.ok, true);
+  assert.equal(getActiveStaffMembers(disabled.state).length, 0);
+  assert.equal(getMissingStaffMembers(disabled.state, event.id).length, 0);
+
+  const restResult = upsertStaffAttendance(
+    disabled.state,
+    {
+      event_date_id: restEvent(disabled.state).id,
+      staff_member_id: createdStaff.staffMember.id,
+      status: STAFF_ATTENDANCE_STATUSES[0],
+      memo: '',
+    },
+    new Date('2026-05-02T11:00:00+09:00'),
+  );
+  assert.equal(restResult.ok, false);
 });
 
 test('reservation normalization validates slots, trims guest names, clamps counts, and detects empty drafts', () => {
