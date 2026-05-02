@@ -452,6 +452,13 @@ test('drink plans can be entered before reservation open and are tracked separat
   assert.equal(deleted.ok, true);
   assert.equal(getDrinkPlansForEvent(deleted.state, event.id).length, 0);
   assert.equal(getDrinkPlansForEvent(deleted.state, event.id, true).length, 1);
+
+  const numericIdState = deepClone(created.state);
+  numericIdState.drink_plans[0].id = 12345;
+  numericIdState.drink_plans[0].is_deleted = false;
+  const deletedNumeric = deleteDrinkPlan(numericIdState, '12345', beforeOpen);
+  assert.equal(deletedNumeric.ok, true);
+  assert.equal(getDrinkPlansForEvent(deletedNumeric.state, event.id).length, 0);
 });
 
 test('reservation upsert opens only after the event gate, supports admin override, updates by slot, and soft deletes', () => {

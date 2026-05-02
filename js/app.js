@@ -12,6 +12,7 @@ import {
   buildDefaultState,
   archiveFinishedEvents,
   clone,
+  createId,
   deleteDrinkPlan,
   deleteReservation,
   findEvent,
@@ -133,13 +134,25 @@ function migrateState(saved) {
   return {
     ...fresh,
     ...saved,
-    drink_plans: saved.drink_plans || [],
+    drink_plans: migrateDrinkPlans(saved.drink_plans || []),
     roles: saved.roles || fresh.roles,
     staff_members: saved.staff_members || [],
     staff_attendance_entries: saved.staff_attendance_entries || [],
     settings: { ...fresh.settings, ...(saved.settings || {}) },
     meta: { ...fresh.meta, ...(saved.meta || {}) },
   };
+}
+
+function migrateDrinkPlans(plans) {
+  const stamp = new Date().toISOString();
+  return plans.map((plan) => ({
+    ...plan,
+    id: plan.id || createId("plan"),
+    created_at: plan.created_at || stamp,
+    updated_at: plan.updated_at || plan.created_at || stamp,
+    deleted_at: plan.deleted_at || null,
+    is_deleted: Boolean(plan.is_deleted),
+  }));
 }
 
 function isPlaceholder(value) {
@@ -613,7 +626,7 @@ function renderDrinkPlanList(plans, locked) {
                 <td>${escapeHtml(type?.label || plan.item_type)}</td>
                 <td>${Number(plan.count) || 0}</td>
                 <td>${escapeHtml(plan.memo || "")}</td>
-                <td><button class="icon-button danger" data-action="delete-drink-plan" data-plan-id="${plan.id}" type="button" ${locked ? "disabled" : ""}>削除</button></td>
+                <td><button class="icon-button danger" data-action="delete-drink-plan" data-plan-id="${escapeAttr(plan.id || "")}" type="button" ${locked || !plan.id ? "disabled" : ""}>削除</button></td>
               </tr>
             `;
           }).join("")}

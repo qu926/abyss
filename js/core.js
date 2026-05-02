@@ -565,7 +565,7 @@ export function upsertReservation(state, input, options = {}) {
 export function deleteReservation(state, reservationId, now = new Date()) {
   const draft = clone(state);
   const stamp = new Date(now).toISOString();
-  const reservation = draft.reservations.find((item) => item.id === reservationId && !item.is_deleted);
+  const reservation = draft.reservations.find((item) => String(item.id) === String(reservationId) && !item.is_deleted);
   if (!reservation) return { state, ok: false, errors: ["削除対象の予約が見つかりません。"] };
   const before = clone(reservation);
   reservation.is_deleted = true;
@@ -578,7 +578,7 @@ export function deleteReservation(state, reservationId, now = new Date()) {
 
 export function getDrinkPlansForEvent(state, eventId, includeDeleted = false) {
   return (state.drink_plans || []).filter((plan) => {
-    return plan.event_date_id === eventId && (includeDeleted || !plan.is_deleted);
+    return String(plan.event_date_id) === String(eventId) && (includeDeleted || !plan.is_deleted);
   });
 }
 
@@ -612,7 +612,7 @@ export function upsertDrinkPlan(state, input, now = new Date()) {
   if (!isDrinkPlanFilled(payload)) errors.push("予定内容を入力してください。");
   if (errors.length) return { state, ok: false, errors };
 
-  const existing = payload.id ? draft.drink_plans.find((plan) => plan.id === payload.id && !plan.is_deleted) : null;
+  const existing = payload.id ? draft.drink_plans.find((plan) => String(plan.id) === String(payload.id) && !plan.is_deleted) : null;
   const before = existing ? clone(existing) : null;
   const after = {
     ...(existing || {
@@ -636,7 +636,7 @@ export function deleteDrinkPlan(state, planId, now = new Date()) {
   const draft = clone(state);
   draft.drink_plans ||= [];
   const stamp = new Date(now).toISOString();
-  const plan = draft.drink_plans.find((item) => item.id === planId && !item.is_deleted);
+  const plan = draft.drink_plans.find((item) => String(item.id) === String(planId) && !item.is_deleted);
   if (!plan) return { state, ok: false, errors: ["削除対象の事前予定が見つかりません。"] };
   const before = clone(plan);
   plan.is_deleted = true;
