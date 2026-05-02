@@ -68,6 +68,7 @@ import {
   upsertStaffMember,
   upsertUser,
   upsertVacation,
+  wasReservationChangedAfterEventCutoff,
 } from "./core.js";
 
 const STORAGE_KEY = "abyss_host_event_manager_v1";
@@ -135,6 +136,7 @@ function migrateState(saved) {
     ...fresh,
     ...saved,
     event_dates: migrateEventDates(saved.event_dates || fresh.event_dates),
+    reservations: migrateReservations(saved.reservations || [], saved.event_dates || fresh.event_dates),
     drink_plans: migrateDrinkPlans(saved.drink_plans || []),
     roles: saved.roles || fresh.roles,
     staff_members: saved.staff_members || [],
@@ -142,6 +144,15 @@ function migrateState(saved) {
     settings: { ...fresh.settings, ...(saved.settings || {}) },
     meta: { ...fresh.meta, ...(saved.meta || {}) },
   };
+}
+
+function migrateReservations(reservations, events) {
+  return reservations.map((reservation) => {
+    if (!reservation.late_warning) return reservation;
+    const event = events.find((item) => item.id === reservation.event_date_id);
+    if (wasReservationChangedAfterEventCutoff(event, reservation)) return reservation;
+    return { ...reservation, late_warning: false };
+  });
 }
 
 function migrateEventDates(events) {

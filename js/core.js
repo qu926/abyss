@@ -506,6 +506,13 @@ export function isAfterEventCutoff(event, now = new Date()) {
   return todayString(current) === event.event_date && current.getTime() > cutoff.getTime();
 }
 
+export function wasReservationChangedAfterEventCutoff(event, reservation) {
+  if (!event || !reservation?.late_warning) return false;
+  const changedAt = reservation.updated_at || reservation.created_at;
+  if (!changedAt) return false;
+  return isAfterEventCutoff(event, new Date(changedAt));
+}
+
 export function upsertReservation(state, input, options = {}) {
   const draft = clone(state);
   const payload = normalizeReservation(input);
@@ -534,6 +541,7 @@ export function upsertReservation(state, input, options = {}) {
   const existing = existingById || existingBySlot;
   const before = existing ? clone(existing) : null;
   const lateWarning = isAfterEventCutoff(event, now) && isMeaningfulReservationChange(before, payload);
+  const existingLateWarning = wasReservationChangedAfterEventCutoff(event, existing);
   const after = {
     ...(existing || {
       id: createId("res"),
@@ -543,7 +551,7 @@ export function upsertReservation(state, input, options = {}) {
       is_deleted: false,
     }),
     ...payload,
-    late_warning: Boolean(lateWarning || existing?.late_warning),
+    late_warning: Boolean(lateWarning || existingLateWarning),
     updated_at: stamp,
   };
   if (existing) {
@@ -750,7 +758,7 @@ export function getReservationWarnings(state, reservation) {
       if (attendance?.status === "未定") warnings.push("担当ホストが未定です");
     }
   }
-  if (reservation.late_warning) warnings.push("17時以降の追加・交代です");
+  if (wasReservationChangedAfterEventCutoff(event, reservation)) warnings.push("17時以降の追加・交代です");
   const drinks = getDrinkLimitStatuses(state, reservation.event_date_id);
   for (const item of Object.values(drinks)) {
     if (item.level === "over") warnings.push(`${item.label}上限超過`);

@@ -64,6 +64,7 @@ import {
   upsertUser,
   upsertVacation,
   validateReservationPayload,
+  wasReservationChangedAfterEventCutoff,
 } from '../js/core.js';
 
 const tests = [];
@@ -604,6 +605,43 @@ test('reservation open and same-day cutoff boundaries are deterministic', () => 
   assert.equal(isAfterEventCutoff(event, new Date(`${event.event_date}T16:59:00`)), false);
   assert.equal(isAfterEventCutoff(event, new Date(`${event.event_date}T17:01:00`)), true);
   assert.equal(isAfterEventCutoff(event, new Date('2026-05-01T18:00:00')), false);
+});
+
+test('late reservation warning is only kept for changes saved on event day after 17:00', () => {
+  const state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const event = activeEvent(state);
+  const eventEve = new Date(`${event.event_date}T20:00:00`);
+  eventEve.setDate(eventEve.getDate() - 1);
+
+  const beforeDay = upsertReservation(
+    state,
+    reservationDraft(event.id, {
+      host_user_id: 'u_kai',
+      princess_name: 'くゆ',
+    }),
+    { now: eventEve, admin: true },
+  );
+  assert.equal(beforeDay.ok, true);
+  assert.equal(beforeDay.reservation.late_warning, false);
+  assert.equal(getReservationWarnings(beforeDay.state, beforeDay.reservation).includes('17時以降の追加・交代です'), false);
+
+  const staleWarning = deepClone(beforeDay.reservation);
+  staleWarning.late_warning = true;
+  staleWarning.updated_at = eventEve.toISOString();
+  assert.equal(wasReservationChangedAfterEventCutoff(event, staleWarning), false);
+
+  const afterCutoff = upsertReservation(
+    beforeDay.state,
+    reservationDraft(event.id, {
+      id: beforeDay.reservation.id,
+      host_user_id: 'u_kai',
+      princess_name: 'くゆ変更',
+    }),
+    { now: new Date(`${event.event_date}T17:01:00`), admin: true },
+  );
+  assert.equal(afterCutoff.ok, true);
+  assert.equal(afterCutoff.reservation.late_warning, true);
+  assert.equal(getReservationWarnings(afterCutoff.state, afterCutoff.reservation).includes('17時以降の追加・交代です'), true);
 });
 
 let passed = 0;
