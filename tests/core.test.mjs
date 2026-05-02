@@ -47,6 +47,7 @@ import {
   isReservationFilled,
   isReservationOpen,
   isValidSlot,
+  mergeSharedState,
   normalizeAttendance,
   normalizeDrinkPlan,
   normalizeReservation,
@@ -243,6 +244,38 @@ test('attendance upsert is immutable and summary tracks missing, present, absent
   );
   assert.equal(restResult.ok, false);
   assert.equal(restResult.state, undecidedResult.state);
+});
+
+test('shared state merge keeps attendance entered from another stale browser session', () => {
+  const base = buildDefaultState(new Date(2026, 4, 15, 12));
+  const event = activeEvent(base);
+  const [hostA, hostB] = getActiveUsers(base);
+
+  const remoteAfterA = upsertAttendance(
+    base,
+    {
+      event_date_id: event.id,
+      user_id: hostA.id,
+      status: ATTENDANCE_STATUSES[0],
+      memo: 'A session',
+    },
+    new Date('2026-05-02T10:00:00+09:00'),
+  );
+  const staleLocalAfterB = upsertAttendance(
+    base,
+    {
+      event_date_id: event.id,
+      user_id: hostB.id,
+      status: ATTENDANCE_STATUSES[0],
+      memo: 'B session',
+    },
+    new Date('2026-05-02T10:05:00+09:00'),
+  );
+
+  const merged = mergeSharedState(remoteAfterA.state, staleLocalAfterB.state);
+  assert.equal(getAttendanceEntry(merged, event.id, hostA.id).memo, 'A session');
+  assert.equal(getAttendanceEntry(merged, event.id, hostB.id).memo, 'B session');
+  assert.equal(getAttendanceEntriesForEvent(merged, event.id).length, 2);
 });
 
 test('hosts can be disabled without removing historical identity', () => {

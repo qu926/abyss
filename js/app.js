@@ -52,6 +52,7 @@ import {
   isReservationFilled,
   isOnVacation,
   isReservationOpen,
+  mergeSharedState,
   normalizeReservation,
   setRoleActive,
   setStaffMemberActive,
@@ -301,7 +302,7 @@ function saveState(nextState, message = "保存しました。") {
   state = nextState;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (syncStatus.mode === "supabase") {
-    saveSharedState(state)
+    saveMergedSharedState(state)
       .then(() => {
         syncStatus = { mode: "supabase", text: "共有DBと同期済み" };
         render();
@@ -314,6 +315,15 @@ function saveState(nextState, message = "保存しました。") {
   }
   showToast(message);
   render();
+}
+
+async function saveMergedSharedState(localState) {
+  const remoteState = await loadSharedState();
+  const migratedRemoteState = remoteState ? migrateState(remoteState) : null;
+  const mergedState = migratedRemoteState ? mergeSharedState(migratedRemoteState, localState) : localState;
+  await saveSharedState(mergedState);
+  state = mergedState;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
 function archiveEndedEvents() {

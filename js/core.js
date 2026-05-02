@@ -38,6 +38,66 @@ export function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function updatedTime(item) {
+  return Date.parse(item?.updated_at || item?.changed_at || item?.created_at || "") || 0;
+}
+
+function newerItem(current, candidate) {
+  if (!current) return clone(candidate);
+  return updatedTime(candidate) >= updatedTime(current) ? clone(candidate) : current;
+}
+
+function mergeByKey(remoteItems = [], localItems = [], keyFn) {
+  const merged = new Map();
+  for (const item of [...(remoteItems || []), ...(localItems || [])]) {
+    const key = keyFn(item);
+    if (!key) continue;
+    merged.set(key, newerItem(merged.get(key), item));
+  }
+  return [...merged.values()];
+}
+
+function mergeHistory(remoteItems = [], localItems = []) {
+  return mergeByKey(remoteItems, localItems, (item) => item.id || `${item.target_type}:${item.target_id}:${item.changed_at}:${item.change_note}`)
+    .sort((a, b) => String(b.changed_at || "").localeCompare(String(a.changed_at || "")))
+    .slice(0, 300);
+}
+
+export function mergeSharedState(remoteState, localState) {
+  const remote = clone(remoteState || {});
+  const local = clone(localState || {});
+  const merged = {
+    ...remote,
+    ...local,
+    settings: { ...(remote.settings || {}), ...(local.settings || {}) },
+    meta: {
+      ...(remote.meta || {}),
+      ...(local.meta || {}),
+      updated_at: updatedTime(local.meta) >= updatedTime(remote.meta) ? local.meta?.updated_at : remote.meta?.updated_at,
+    },
+  };
+
+  merged.users = mergeByKey(remote.users, local.users, (item) => item.id);
+  merged.roles = mergeByKey(remote.roles, local.roles, (item) => item.id || item.name);
+  merged.staff_members = mergeByKey(remote.staff_members, local.staff_members, (item) => item.id);
+  merged.long_vacations = mergeByKey(remote.long_vacations, local.long_vacations, (item) => item.id);
+  merged.event_dates = mergeByKey(remote.event_dates, local.event_dates, (item) => item.id || item.event_date);
+  merged.attendance_entries = mergeByKey(remote.attendance_entries, local.attendance_entries, (item) => {
+    return item.event_date_id && item.user_id ? `${item.event_date_id}:${item.user_id}` : item.id;
+  });
+  merged.staff_attendance_entries = mergeByKey(remote.staff_attendance_entries, local.staff_attendance_entries, (item) => {
+    return item.event_date_id && item.staff_member_id ? `${item.event_date_id}:${item.staff_member_id}` : item.id;
+  });
+  merged.reservations = mergeByKey(remote.reservations, local.reservations, (item) => {
+    return item.event_date_id && item.time_slot && item.seat_type && item.group_no
+      ? `${item.event_date_id}:${item.time_slot}:${item.seat_type}:${item.group_no}`
+      : item.id;
+  });
+  merged.drink_plans = mergeByKey(remote.drink_plans, local.drink_plans, (item) => item.id);
+  merged.histories = mergeHistory(remote.histories, local.histories);
+  return merged;
+}
+
 export function todayString(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
