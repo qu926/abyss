@@ -48,6 +48,7 @@ import {
   getStaffAttendanceSummary,
   getVacationExemptUsers,
   isEventArchived,
+  isReservationFilled,
   isOnVacation,
   isReservationOpen,
   normalizeReservation,
@@ -93,6 +94,8 @@ let view = {
   attendanceUserId: "",
   staffAttendanceMemberId: "",
   reservationTab: "grid",
+  dashboardDetailType: "",
+  dashboardDetailKey: "",
   editingUserId: "",
   editingStaffMemberId: "",
   editingVacationId: "",
@@ -292,8 +295,8 @@ function render() {
         </div>
         <nav class="top-nav" aria-label="主要画面">
           <span class="sync-pill ${syncStatus.mode}">${escapeHtml(syncStatus.text)}</span>
-          ${navButton("attendance", "勤怠入力")}
-          ${navButton("staffAttendance", "内勤入力")}
+          ${navButton("attendance", "ホスト勤怠入力")}
+          ${navButton("staffAttendance", "内勤勤怠入力")}
           ${navButton("reservation", "予約入力")}
           ${navButton("admin", "運営画面")}
         </nav>
@@ -351,7 +354,7 @@ function renderAttendancePage() {
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Host</p>
-            <h2>勤怠まとめ入力</h2>
+            <h2>ホスト勤怠まとめ入力</h2>
           </div>
           <span class="capacity ok">${events.length}日分</span>
         </div>
@@ -364,10 +367,10 @@ function renderAttendancePage() {
           </label>
           <p class="plan-note">各日程の出欠をまとめて選択できます。何も選んでいない日は未入力のままです。</p>
           ${activeUsers.length && events.length ? `
+            <button class="primary-button bulk-save-button" type="submit">まとめて登録 / 更新する</button>
             <div class="bulk-attendance-list">
               ${events.map((item) => renderBulkAttendanceRow(item)).join("")}
             </div>
-            <button class="primary-button" type="submit">まとめて登録 / 更新する</button>
           ` : `<p class="empty">入力対象の日程またはホストがありません。</p>`}
         </form>
       </div>
@@ -439,7 +442,7 @@ function renderStaffAttendancePage() {
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Staff</p>
-            <h2>内勤まとめ入力</h2>
+            <h2>内勤勤怠まとめ入力</h2>
           </div>
           <span class="capacity ok">${events.length}日分</span>
         </div>
@@ -452,10 +455,10 @@ function renderStaffAttendancePage() {
           </label>
           <p class="plan-note">各日程の内勤出勤をまとめて選択できます。何も選んでいない日は未入力のままです。</p>
           ${staffMembers.length && events.length ? `
+            <button class="primary-button bulk-save-button" type="submit">まとめて登録 / 更新する</button>
             <div class="bulk-attendance-list">
               ${events.map((item) => renderBulkStaffAttendanceRow(item)).join("")}
             </div>
-            <button class="primary-button" type="submit">まとめて登録 / 更新する</button>
           ` : `<p class="empty">入力対象の日程または内勤スタッフがありません。運営画面の「内勤一覧」から追加してください。</p>`}
         </form>
       </div>
@@ -792,8 +795,8 @@ function renderAdminPage() {
         </select>
         <div class="side-nav">
           ${adminTabButton("dashboard", "運営トップ")}
-          ${adminTabButton("attendance", "勤怠管理")}
-          ${adminTabButton("staffAttendance", "内勤出勤")}
+          ${adminTabButton("attendance", "ホスト勤怠")}
+          ${adminTabButton("staffAttendance", "内勤勤怠")}
           ${adminTabButton("missing", "未入力者")}
           ${adminTabButton("hosts", "ホスト一覧")}
           ${adminTabButton("staff", "内勤一覧")}
@@ -870,26 +873,27 @@ function renderAdminDashboard() {
       </div>
       <div class="dashboard-grid">
         <div class="mini-panel">
-          <h3>勤怠</h3>
-          ${renderAttendanceSummaryCards(view.eventId)}
+          <h3>ホスト勤怠</h3>
+          ${renderAttendanceSummaryCards(view.eventId, { detailType: "hostAttendance" })}
         </div>
         <div class="mini-panel">
-          <h3>内勤</h3>
-          ${renderStaffAttendanceSummaryCards(view.eventId)}
+          <h3>内勤勤怠</h3>
+          ${renderStaffAttendanceSummaryCards(view.eventId, { detailType: "staffAttendance" })}
         </div>
         <div class="mini-panel">
           <h3>予約枠</h3>
-          ${renderSeatStatusList(view.eventId)}
+          ${renderSeatStatusList(view.eventId, { detailType: "seat" })}
         </div>
         <div class="mini-panel">
           <h3>シャンパン・タワー</h3>
-          ${renderDrinkStatusList(view.eventId)}
+          ${renderDrinkStatusList(view.eventId, { detailType: "drink" })}
         </div>
         <div class="mini-panel">
           <h3>確認が必要</h3>
           ${issues.length ? `<ul class="issue-list">${issues.map((issue) => `<li class="${issue.level}">⚠ ${escapeHtml(issue.text)}</li>`).join("")}</ul>` : `<p class="empty">要確認項目はありません。</p>`}
         </div>
       </div>
+      ${renderDashboardDetail()}
     </section>
   `;
 }
@@ -916,7 +920,7 @@ function renderAdminAttendance() {
   return `
     <section class="panel page-panel">
       <div class="panel-heading">
-        <div><p class="eyebrow">Attendance</p><h2>勤怠管理</h2></div>
+        <div><p class="eyebrow">Attendance</p><h2>ホスト勤怠管理</h2></div>
       </div>
       <div class="table-wrap">
         <table class="data-table">
@@ -950,7 +954,7 @@ function renderAdminStaffAttendance() {
   return `
     <section class="panel page-panel">
       <div class="panel-heading wide-heading">
-        <div><p class="eyebrow">Staff Attendance</p><h2>${event ? formatDateLabel(event.event_date) : ""} 内勤出勤管理</h2></div>
+        <div><p class="eyebrow">Staff Attendance</p><h2>${event ? formatDateLabel(event.event_date) : ""} 内勤勤怠管理</h2></div>
         ${statusPill(event?.status || "未設定")}
       </div>
       <div class="split">
@@ -1386,35 +1390,169 @@ function renderDataTools() {
   `;
 }
 
-function renderAttendanceSummaryCards(eventId) {
+function renderDashboardDetail() {
+  const { dashboardDetailType: type, dashboardDetailKey: key } = view;
+  if (!type || !key) return "";
+  if (type === "hostAttendance") return renderHostAttendanceDetail(key);
+  if (type === "staffAttendance") return renderStaffAttendanceDetail(key);
+  if (type === "seat") return renderSeatDetail(key);
+  if (type === "drink") return renderDrinkDetail(key);
+  return "";
+}
+
+function renderHostAttendanceDetail(status) {
+  const event = findEvent(state, view.eventId);
+  const title = `${event ? formatDateLabel(event.event_date) : ""} ホスト勤怠: ${status}`;
+  const items = getHostAttendanceDetailItems(status);
+  return renderDashboardDetailPanel(title, renderDetailList(items, "対象者はいません。"));
+}
+
+function getHostAttendanceDetailItems(status) {
+  if (status === "未入力") {
+    return getMissingUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: user.role || "ホスト" }));
+  }
+  if (status === "長期休暇") {
+    return getVacationExemptUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: "長期休暇中" }));
+  }
+  return getActiveUsers(state)
+    .map((user) => ({ user, entry: getAttendanceEntry(state, view.eventId, user.id) }))
+    .filter(({ entry }) => entry?.status === status)
+    .map(({ user, entry }) => ({ title: user.display_name, meta: [user.role, entry.memo].filter(Boolean).join(" / ") }));
+}
+
+function renderStaffAttendanceDetail(status) {
+  const event = findEvent(state, view.eventId);
+  const title = `${event ? formatDateLabel(event.event_date) : ""} 内勤勤怠: ${status}`;
+  const items = status === "未入力"
+    ? getMissingStaffMembers(state, view.eventId).map((member) => ({ title: member.display_name, meta: member.staff_type || "内勤" }))
+    : getActiveStaffMembers(state)
+      .map((member) => ({ member, entry: getStaffAttendanceEntry(state, view.eventId, member.id) }))
+      .filter(({ entry }) => entry?.status === status)
+      .map(({ member, entry }) => ({ title: member.display_name, meta: [member.staff_type || "内勤", entry.memo].filter(Boolean).join(" / ") }));
+  return renderDashboardDetailPanel(title, renderDetailList(items, "対象者はいません。"));
+}
+
+function renderSeatDetail(slotKey) {
+  const [timeSlot, seatType] = slotKey.split(":");
+  const reservations = getGroupLabels(seatType)
+    .map((groupNo) => ({ groupNo, reservation: findReservationBySlot(state, view.eventId, timeSlot, seatType, groupNo) }))
+    .filter(({ reservation }) => reservation && isReservationFilled(reservation));
+  const emptyGroups = getGroupLabels(seatType)
+    .filter((groupNo) => !findReservationBySlot(state, view.eventId, timeSlot, seatType, groupNo));
+  const items = reservations.map(({ groupNo, reservation }) => {
+    const hostName = findUser(state, reservation.host_user_id)?.display_name || "未選択";
+    const drinks = [
+      reservation.tower_count ? "タワー" : "",
+      reservation.purple_count ? `P${reservation.purple_count}` : "",
+      reservation.red_count ? `R${reservation.red_count}` : "",
+      reservation.blue_count ? `B${reservation.blue_count}` : "",
+      reservation.green_count ? `G${reservation.green_count}` : "",
+    ].filter(Boolean).join(" / ");
+    return {
+      title: `${groupNo} ${hostName}`,
+      meta: [reservation.princess_name, reservation.attribute, drinks, reservation.memo].filter(Boolean).join(" / "),
+    };
+  });
+  const body = `
+    ${renderDetailList(items, "この枠の予約はまだありません。")}
+    <p class="detail-note">空き枠: ${emptyGroups.length ? emptyGroups.join("、") : "なし"}</p>
+  `;
+  return renderDashboardDetailPanel(`予約枠: ${getTimeSlotLabel(timeSlot)} ${seatType}`, body);
+}
+
+function renderDrinkDetail(drinkKey) {
+  const item = DRINK_LIMITS[drinkKey];
+  if (!item) return "";
+  const reservations = getReservationsForEvent(state, view.eventId)
+    .filter((reservation) => Number(reservation[drinkKey === "tower" ? "tower_count" : `${drinkKey}_count`]) > 0)
+    .map((reservation) => {
+      const count = Number(reservation[drinkKey === "tower" ? "tower_count" : `${drinkKey}_count`]) || 0;
+      const hostName = findUser(state, reservation.host_user_id)?.display_name || "未選択";
+      return {
+        title: `実予約 ${count}本`,
+        meta: [`${getTimeSlotLabel(reservation.time_slot)} ${reservation.seat_type} ${reservation.group_no}`, hostName, reservation.princess_name, reservation.memo].filter(Boolean).join(" / "),
+      };
+    });
+  const plans = getDrinkPlansForEvent(state, view.eventId)
+    .filter((plan) => plan.item_type === drinkKey)
+    .map((plan) => ({
+      title: `事前予定 ${Number(plan.count) || 0}本`,
+      meta: [getTimeSlotLabel(plan.time_slot), findUser(state, plan.host_user_id)?.display_name || "未選択", plan.memo].filter(Boolean).join(" / "),
+    }));
+  return renderDashboardDetailPanel(`${item.label}の内訳`, renderDetailList([...reservations, ...plans], "登録はまだありません。"));
+}
+
+function renderDashboardDetailPanel(title, body) {
+  return `
+    <section class="dashboard-detail-panel">
+      <div class="section-title">
+        <h3>${escapeHtml(title)}</h3>
+        <button class="icon-button" data-action="dashboard-detail-clear" type="button">閉じる</button>
+      </div>
+      ${body}
+    </section>
+  `;
+}
+
+function renderDetailList(items, emptyText) {
+  if (!items.length) return `<p class="empty">${emptyText}</p>`;
+  return `
+    <ul class="detail-list">
+      ${items.map((item) => `<li><strong>${escapeHtml(item.title)}</strong>${item.meta ? `<span>${escapeHtml(item.meta)}</span>` : ""}</li>`).join("")}
+    </ul>
+  `;
+}
+
+function renderAttendanceSummaryCards(eventId, options = {}) {
   const summary = getAttendanceSummary(state, eventId);
   return `
     <div class="summary-grid">
-      ${Object.entries(summary).map(([key, value]) => `<div class="summary-card status-${key}"><span>${key}</span><strong>${value}</strong></div>`).join("")}
+      ${Object.entries(summary).map(([key, value]) => renderSummaryCard(key, value, options.detailType)).join("")}
     </div>
   `;
 }
 
-function renderStaffAttendanceSummaryCards(eventId) {
+function renderStaffAttendanceSummaryCards(eventId, options = {}) {
   const summary = getStaffAttendanceSummary(state, eventId);
   return `
     <div class="summary-grid">
-      ${Object.entries(summary).map(([key, value]) => `<div class="summary-card status-${key}"><span>${key}</span><strong>${value}</strong></div>`).join("")}
+      ${Object.entries(summary).map(([key, value]) => renderSummaryCard(key, value, options.detailType)).join("")}
     </div>
   `;
 }
 
-function renderSeatStatusList(eventId) {
+function renderSummaryCard(key, value, detailType = "") {
+  if (!detailType) {
+    return `<div class="summary-card status-${key}"><span>${escapeHtml(key)}</span><strong>${value}</strong></div>`;
+  }
+  const selected = view.dashboardDetailType === detailType && view.dashboardDetailKey === key;
+  const attrs = `data-action="dashboard-detail" data-detail-type="${detailType}" data-detail-key="${escapeAttr(key)}"`;
+  return `<button class="summary-card dashboard-trigger status-${key} ${selected ? "is-selected" : ""}" ${attrs} type="button"><span>${escapeHtml(key)}</span><strong>${value}</strong></button>`;
+}
+
+function renderSeatStatusList(eventId, options = {}) {
   const statuses = getSeatLimitStatuses(state, eventId);
   return `<ul class="status-list">${Object.entries(statuses)
-    .map(([key, item]) => `<li class="${item.level}"><span>${key.replace(":", " ")}</span><strong>${item.total} / ${item.limit}</strong><em>${item.text}</em></li>`)
+    .map(([key, item]) => {
+      const selected = view.dashboardDetailType === options.detailType && view.dashboardDetailKey === key;
+      const attrs = options.detailType
+        ? `data-action="dashboard-detail" data-detail-type="${options.detailType}" data-detail-key="${escapeAttr(key)}"`
+        : "";
+      return `<li class="${item.level} dashboard-list-item ${selected ? "is-selected" : ""}" ${attrs}><span>${key.replace(":", " ")}</span><strong>${item.total} / ${item.limit}</strong><em>${item.text}</em></li>`;
+    })
     .join("")}</ul>`;
 }
 
-function renderDrinkStatusList(eventId) {
+function renderDrinkStatusList(eventId, options = {}) {
   const statuses = getDrinkLimitStatuses(state, eventId);
   return `<ul class="status-list">${Object.entries(statuses)
-    .map(([, item]) => `<li class="${item.level}"><span>${item.label}</span><strong>${item.total} / ${item.limit}</strong><em>${item.text}</em></li>`)
+    .map(([key, item]) => {
+      const selected = view.dashboardDetailType === options.detailType && view.dashboardDetailKey === key;
+      const attrs = options.detailType
+        ? `data-action="dashboard-detail" data-detail-type="${options.detailType}" data-detail-key="${escapeAttr(key)}"`
+        : "";
+      return `<li class="${item.level} dashboard-list-item ${selected ? "is-selected" : ""}" ${attrs}><span>${item.label}</span><strong>${item.total} / ${item.limit}</strong><em>${item.text}</em></li>`;
+    })
     .join("")}</ul>`;
 }
 
@@ -1462,6 +1600,19 @@ function handleClick(event) {
   }
   if (action === "reservation-tab") {
     view.reservationTab = button.dataset.tab;
+    render();
+    return;
+  }
+  if (action === "dashboard-detail") {
+    const same = view.dashboardDetailType === button.dataset.detailType && view.dashboardDetailKey === button.dataset.detailKey;
+    view.dashboardDetailType = same ? "" : button.dataset.detailType;
+    view.dashboardDetailKey = same ? "" : button.dataset.detailKey;
+    render();
+    return;
+  }
+  if (action === "dashboard-detail-clear") {
+    view.dashboardDetailType = "";
+    view.dashboardDetailKey = "";
     render();
     return;
   }

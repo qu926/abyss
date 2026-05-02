@@ -504,7 +504,23 @@ textarea:focus {
   min-height: 68px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  background: #fff;
+  color: inherit;
   padding: 10px;
+  text-align: left;
+}
+
+.summary-card.dashboard-trigger,
+.dashboard-list-item {
+  cursor: pointer;
+}
+
+.summary-card.dashboard-trigger:hover,
+.summary-card.dashboard-trigger.is-selected,
+.dashboard-list-item:hover,
+.dashboard-list-item.is-selected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.12);
 }
 
 .summary-card span {
@@ -592,6 +608,44 @@ textarea:focus {
   align-items: center;
   gap: 10px;
   background: #fff;
+}
+
+.dashboard-detail-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  padding: 14px;
+}
+
+.detail-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.detail-list li {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  padding: 10px;
+}
+
+.detail-list strong {
+  font-size: 14px;
+}
+
+.detail-list span,
+.detail-note {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .status-list em {
