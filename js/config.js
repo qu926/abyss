@@ -1,6 +1,6 @@
 window.ABYSS_CONFIG = {
   storageMode: "supabase",
-  supabaseUrl: "PASTE_SUPABASE_PROJECT_URL_HERE",
-  supabaseAnonKey: "PASTE_SUPABASE_ANON_PUBLIC_KEY_HERE",
+  supabaseUrl: "https://cdnbkbryksrhioajgorg.supabase.co/rest/v1/",
+  supabaseAnonKey: "sb_publishable_d-ydLZw9k8vNPpDnu_QDGA_ACjkGL_i",
   stateRowId: "host-event-manager",
 };
