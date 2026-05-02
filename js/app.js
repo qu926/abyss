@@ -16,6 +16,7 @@ import {
   deleteReservation,
   findEvent,
   findReservationBySlot,
+  findStaffMember,
   findUser,
   formatDateLabel,
   formatDateTime,
@@ -87,6 +88,7 @@ let view = {
   eventId: "",
   archiveEventId: "",
   attendanceUserId: "",
+  staffAttendanceMemberId: "",
   editingUserId: "",
   editingStaffMemberId: "",
   editingVacationId: "",
@@ -96,6 +98,7 @@ let view = {
 view.eventId = getDefaultEventId();
 view.archiveEventId = getDefaultArchiveEventId();
 view.attendanceUserId = getActiveUsers(state)[0]?.id || "";
+view.staffAttendanceMemberId = getActiveStaffMembers(state)[0]?.id || "";
 
 render();
 initializeSharedState();
@@ -273,6 +276,8 @@ function render() {
   if (!selectedEvent || isEventArchived(selectedEvent)) view.eventId = getDefaultEventId();
   if (view.archiveEventId && !findEvent(state, view.archiveEventId)) view.archiveEventId = "";
   if (!findUser(state, view.attendanceUserId)) view.attendanceUserId = getActiveUsers(state)[0]?.id || "";
+  const selectedStaffMember = findStaffMember(state, view.staffAttendanceMemberId);
+  if (!selectedStaffMember || selectedStaffMember.is_active === false) view.staffAttendanceMemberId = getActiveStaffMembers(state)[0]?.id || "";
 
   root.innerHTML = `
     <div class="app-shell">
@@ -284,6 +289,7 @@ function render() {
         <nav class="top-nav" aria-label="主要画面">
           <span class="sync-pill ${syncStatus.mode}">${escapeHtml(syncStatus.text)}</span>
           ${navButton("attendance", "勤怠入力")}
+          ${navButton("staffAttendance", "内勤入力")}
           ${navButton("reservation", "予約入力")}
           ${navButton("admin", "運営画面")}
         </nav>
@@ -323,6 +329,7 @@ function navButton(page, label) {
 }
 
 function renderCurrentPage() {
+  if (view.page === "staffAttendance") return renderStaffAttendancePage();
   if (view.page === "reservation") return renderReservationPage(false);
   if (view.page === "admin") return renderAdminPage();
   return renderAttendancePage();
@@ -380,6 +387,67 @@ function renderAttendancePage() {
         <div class="subsection">
           <h3>未入力者</h3>
           ${renderNameList(getMissingUsers(state, view.eventId), "未入力者はいません。")}
+        </div>
+      </aside>
+    </section>
+  `;
+}
+
+function renderStaffAttendancePage() {
+  const event = findEvent(state, view.eventId);
+  const staffMembers = getActiveStaffMembers(state);
+  const entry = getStaffAttendanceEntry(state, view.eventId, view.staffAttendanceMemberId);
+  const isHoliday = event?.status === "休み";
+  return `
+    <section class="page-grid two-col">
+      <div class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Staff</p>
+            <h2>内勤入力</h2>
+          </div>
+          ${statusPill(event?.status || "未設定")}
+        </div>
+        ${isHoliday ? `<div class="notice muted">${formatDateLabel(event.event_date)} は休みです。この日は内勤出勤入力対象外です。</div>` : ""}
+        ${staffMembers.length ? `
+          <form class="stack" data-action="save-staff-attendance">
+            <label>
+              <span>対象日</span>
+              <select name="event_date_id" data-role="event-select">
+                ${renderEventOptions(view.eventId)}
+              </select>
+            </label>
+            <label>
+              <span>内勤名</span>
+              <select name="staff_member_id" data-role="staff-attendance-member-select">
+                ${staffMembers.map((member) => option(member.id, member.display_name, member.id === view.staffAttendanceMemberId)).join("")}
+              </select>
+            </label>
+            <label>
+              <span>出欠</span>
+              <select name="status" ${isHoliday ? "disabled" : ""}>
+                ${STAFF_ATTENDANCE_STATUSES.map((status) => option(status, status, status === (entry?.status || "出勤"))).join("")}
+              </select>
+            </label>
+            <label>
+              <span>メモ</span>
+              <textarea name="memo" rows="3" ${isHoliday ? "disabled" : ""}>${escapeHtml(entry?.memo || "")}</textarea>
+            </label>
+            <button class="primary-button" type="submit" ${isHoliday ? "disabled" : ""}>登録 / 更新する</button>
+          </form>
+        ` : `<p class="empty">内勤スタッフが未登録です。運営画面の「内勤一覧」から追加してください。</p>`}
+      </div>
+      <aside class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Staff Status</p>
+            <h2>${event ? formatDateLabel(event.event_date) : "対象日未設定"}</h2>
+          </div>
+        </div>
+        ${renderStaffAttendanceSummaryCards(view.eventId)}
+        <div class="subsection">
+          <h3>内勤未入力</h3>
+          ${renderNameList(getMissingStaffMembers(state, view.eventId), "内勤の未入力者はいません。")}
         </div>
       </aside>
     </section>
@@ -1383,6 +1451,10 @@ function handleSubmit(event) {
     const result = upsertAttendance(state, data);
     applyResult(result, "勤怠を保存しました。");
   }
+  if (action === "save-staff-attendance") {
+    const result = upsertStaffAttendance(state, data);
+    applyResult(result, "内勤出勤を保存しました。");
+  }
   if (action === "site-login") {
     if (data.password === state.settings.adminPassword) {
       siteUnlocked = true;
@@ -1459,6 +1531,12 @@ function handleChange(event) {
   const attendanceUser = event.target.closest("[data-role='attendance-user-select']");
   if (attendanceUser) {
     view.attendanceUserId = attendanceUser.value;
+    render();
+    return;
+  }
+  const staffAttendanceMember = event.target.closest("[data-role='staff-attendance-member-select']");
+  if (staffAttendanceMember) {
+    view.staffAttendanceMemberId = staffAttendanceMember.value;
     render();
     return;
   }
