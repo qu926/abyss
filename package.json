@@ -1,0 +1,11 @@
+{
+  "name": "abyss-host-event-manager",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.cjs",
+    "test": "node tests/core.test.mjs",
+    "check": "node --check js/core.js && node --check js/app.js && node --check server.cjs"
+  }
+}
