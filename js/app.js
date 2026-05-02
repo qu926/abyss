@@ -134,6 +134,7 @@ function migrateState(saved) {
   return {
     ...fresh,
     ...saved,
+    event_dates: migrateEventDates(saved.event_dates || fresh.event_dates),
     drink_plans: migrateDrinkPlans(saved.drink_plans || []),
     roles: saved.roles || fresh.roles,
     staff_members: saved.staff_members || [],
@@ -141,6 +142,27 @@ function migrateState(saved) {
     settings: { ...fresh.settings, ...(saved.settings || {}) },
     meta: { ...fresh.meta, ...(saved.meta || {}) },
   };
+}
+
+function migrateEventDates(events) {
+  return events.map((event) => {
+    if (!event.event_date) return event;
+    const autoOpenAt = getReservationOpenAt(event.event_date);
+    const legacyOpenAt = getLegacyReservationOpenAt(event.event_date);
+    const shouldUpdateOpenAt = !event.reservation_open_at || event.reservation_open_at === legacyOpenAt;
+    return {
+      ...event,
+      reservation_open_at: shouldUpdateOpenAt ? autoOpenAt : event.reservation_open_at,
+    };
+  });
+}
+
+function getLegacyReservationOpenAt(eventDate) {
+  const date = new Date(`${eventDate}T00:00:00`);
+  const day = date.getDay();
+  date.setDate(date.getDate() - day);
+  date.setHours(22, 0, 0, 0);
+  return toLocalDateTimeString(date);
 }
 
 function migrateDrinkPlans(plans) {
@@ -572,7 +594,7 @@ function renderReservationOpenNotice(event, adminMode) {
   if (isReservationOpen(event)) {
     return `<div class="notice success">予約入力受付中です。解放日時: ${formatDateTime(event.reservation_open_at)}</div>`;
   }
-  return `<div class="notice muted">この日の予約入力は日曜22:00から開始されます。現在は閲覧のみ可能です。解放日時: ${formatDateTime(event.reservation_open_at)}</div>`;
+  return `<div class="notice muted">この日の予約入力は前週の日曜22:00から開始されます。現在は閲覧のみ可能です。解放日時: ${formatDateTime(event.reservation_open_at)}</div>`;
 }
 
 function renderDrinkPlans(eventId, { locked = false } = {}) {

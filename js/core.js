@@ -70,7 +70,7 @@ export function formatDateTime(value) {
 export function getReservationOpenAt(eventDate) {
   const date = toDate(eventDate);
   const day = date.getDay();
-  date.setDate(date.getDate() - day);
+  date.setDate(date.getDate() - day - 7);
   date.setHours(22, 0, 0, 0);
   return toLocalDateTimeString(date);
 }
@@ -516,7 +516,7 @@ export function upsertReservation(state, input, options = {}) {
   if (!event) errors.push("イベント日が見つかりません。");
   if (event && event.status === "休み") errors.push("休み日は予約入力対象外です。");
   if (event && !options.admin && !isReservationOpen(event, now)) {
-    errors.push("この日の予約入力は日曜22:00から開始されます。");
+    errors.push("この日の予約入力は前週の日曜22:00から開始されます。");
   }
   if (!isReservationFilled(payload)) errors.push("保存する予約内容がありません。");
   if (errors.length) return { state, ok: false, errors, warnings: [] };
