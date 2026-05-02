@@ -4,7 +4,6 @@ import {
   DRINK_LIMITS,
   DRINK_PLAN_TYPES,
   EVENT_STATUSES,
-  ROLES,
   RESERVATION_SEAT_ORDER,
   SEAT_TYPES,
   SLOT_LIMITS,
@@ -35,6 +34,7 @@ import {
   getReservationOpenAt,
   getReservationWarnings,
   getReservationsForEvent,
+  getRoles,
   getSeatLimitStatuses,
   getTimeSlotLabel,
   getVacationExemptUsers,
@@ -42,12 +42,15 @@ import {
   isOnVacation,
   isReservationOpen,
   normalizeReservation,
+  setRoleActive,
+  setUserActive,
   sortedUsers,
   toLocalDateTimeString,
   upsertAttendance,
   upsertDrinkPlan,
   upsertEvent,
   upsertReservation,
+  upsertRole,
   upsertUser,
   upsertVacation,
 } from "./core.js";
@@ -111,6 +114,7 @@ function migrateState(saved) {
     ...fresh,
     ...saved,
     drink_plans: saved.drink_plans || [],
+    roles: saved.roles || fresh.roles,
     settings: { ...fresh.settings, ...(saved.settings || {}) },
     meta: { ...fresh.meta, ...(saved.meta || {}) },
   };
@@ -735,6 +739,12 @@ function renderAdminMissing() {
 function renderHostManagement() {
   const editing = view.editingUserId ? findUser(state, view.editingUserId) : null;
   const users = sortedUsers(state.users);
+  const roles = getRoles(state);
+  const roleOptions = [...roles];
+  if (editing?.role && !roleOptions.some((role) => role.name === editing.role)) {
+    const inactiveRole = getRoles(state, true).find((role) => role.name === editing.role);
+    roleOptions.push(inactiveRole || { name: editing.role, is_active: false });
+  }
   return `
     <section class="panel page-panel">
       <div class="panel-heading">
@@ -745,11 +755,28 @@ function renderHostManagement() {
         <input type="hidden" name="id" value="${editing?.id || ""}">
         <label><span>ホスト名</span><input name="display_name" value="${escapeAttr(editing?.display_name || "")}" required></label>
         <label><span>読み仮名</span><input name="kana" value="${escapeAttr(editing?.kana || "")}"></label>
-        <label><span>ロール</span><select name="role">${ROLES.map((role) => option(role, role, role === (editing?.role || "ホスト"))).join("")}</select></label>
+        <label><span>ロール</span><select name="role">${roleOptions.map((role) => option(role.name, role.is_active === false ? `${role.name}（無効）` : role.name, role.name === (editing?.role || "ホスト"))).join("")}</select></label>
         <label class="check-label"><input name="is_active" type="checkbox" ${editing?.is_active !== false ? "checked" : ""}> 有効</label>
         <label class="span-2"><span>メモ</span><input name="note" value="${escapeAttr(editing?.note || "")}"></label>
         <button class="primary-button" type="submit">${editing ? "更新する" : "追加する"}</button>
       </form>
+      <div class="mini-panel role-manager">
+        <h3>ロール管理</h3>
+        <form class="role-form" data-action="save-role">
+          <label><span>追加するロール名</span><input name="name" placeholder="例: 幹部候補"></label>
+          <button class="primary-button" type="submit">ロールを追加</button>
+        </form>
+        <div class="role-chip-list">
+          ${getRoles(state, true).map((role) => `
+            <span class="role-chip ${role.is_active === false ? "is-disabled" : ""}">
+              ${escapeHtml(role.name)}
+              ${role.is_active === false
+                ? `<button data-action="enable-role" data-role-name="${escapeAttr(role.name)}" type="button">有効化</button>`
+                : `<button data-action="disable-role" data-role-name="${escapeAttr(role.name)}" type="button">無効化</button>`}
+            </span>
+          `).join("")}
+        </div>
+      </div>
       <div class="table-wrap">
         <table class="data-table">
           <thead><tr><th>ホスト名</th><th>読み</th><th>ロール</th><th>状態</th><th>メモ</th><th>操作</th></tr></thead>
@@ -759,9 +786,16 @@ function renderHostManagement() {
                 <td>${escapeHtml(user.display_name)}</td>
                 <td>${escapeHtml(user.kana || "")}</td>
                 <td>${escapeHtml(user.role)}</td>
-                <td>${user.is_active ? "有効" : "無効"}</td>
+                <td>${user.is_active ? `<span class="inline-pill active">有効</span>` : `<span class="inline-pill muted">無効</span>`}</td>
                 <td>${escapeHtml(user.note || "")}</td>
-                <td><button class="icon-button" data-action="edit-user" data-user-id="${user.id}" type="button">編集</button></td>
+                <td>
+                  <div class="row-actions">
+                    <button class="icon-button" data-action="edit-user" data-user-id="${user.id}" type="button">編集</button>
+                    ${user.is_active
+                      ? `<button class="icon-button danger" data-action="disable-user" data-user-id="${user.id}" type="button">無効化</button>`
+                      : `<button class="icon-button save" data-action="enable-user" data-user-id="${user.id}" type="button">有効化</button>`}
+                  </div>
+                </td>
               </tr>
             `).join("")}
           </tbody>
@@ -1120,6 +1154,25 @@ function handleClick(event) {
     view.editingUserId = button.dataset.userId;
     render();
   }
+  if (action === "disable-user") {
+    disableUserFromButton(button);
+    return;
+  }
+  if (action === "enable-user") {
+    const result = setUserActive(state, button.dataset.userId, true);
+    applyResult(result, "ホストを有効化しました。");
+    return;
+  }
+  if (action === "disable-role") {
+    const result = setRoleActive(state, button.dataset.roleName, false);
+    applyResult(result, "ロールを無効化しました。");
+    return;
+  }
+  if (action === "enable-role") {
+    const result = setRoleActive(state, button.dataset.roleName, true);
+    applyResult(result, "ロールを有効化しました。");
+    return;
+  }
   if (action === "new-user") {
     view.editingUserId = "";
     render();
@@ -1143,6 +1196,19 @@ function handleClick(event) {
   if (action === "copy-text") copyText(button.dataset.source);
   if (action === "export-json") exportJson();
   if (action === "reset-data") resetData();
+}
+
+function disableUserFromButton(button) {
+  const user = findUser(state, button.dataset.userId);
+  if (!user) {
+    showToast("対象ホストが見つかりません。", "error");
+    return;
+  }
+  const ok = window.confirm(`${user.display_name} を無効化します。入力候補と未入力判定から外れます。過去の予約履歴には名前が残ります。`);
+  if (!ok) return;
+  const result = setUserActive(state, user.id, false);
+  if (result.ok && view.editingUserId === user.id) view.editingUserId = "";
+  applyResult(result, "ホストを無効化しました。");
 }
 
 function handleSubmit(event) {
@@ -1187,6 +1253,10 @@ function handleSubmit(event) {
     const result = upsertUser(state, { ...data, is_active: form.elements.is_active.checked });
     if (result.ok) view.editingUserId = "";
     applyResult(result, "ホスト情報を保存しました。");
+  }
+  if (action === "save-role") {
+    const result = upsertRole(state, { name: data.name, is_active: true });
+    applyResult(result, "ロールを保存しました。");
   }
   if (action === "save-vacation") {
     const result = upsertVacation(state, { ...data, is_active: form.elements.is_active.checked });
