@@ -657,6 +657,92 @@ textarea:focus {
   align-items: end;
 }
 
+.bulk-attendance-form,
+.bulk-attendance-list {
+  display: grid;
+  gap: 12px;
+}
+
+.bulk-attendance-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(320px, 1.6fr) minmax(180px, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  padding: 12px;
+}
+
+.bulk-date {
+  display: grid;
+  gap: 4px;
+}
+
+.bulk-date span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bulk-status-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.bulk-status-option {
+  position: relative;
+  display: block;
+}
+
+.bulk-status-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bulk-status-option span {
+  display: grid;
+  min-height: 38px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.bulk-status-option input:focus + span {
+  border-color: var(--blue);
+  outline: 3px solid rgba(31, 111, 235, 0.14);
+}
+
+.bulk-status-option.status-出勤 input:checked + span {
+  border-color: #9bd4b6;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.bulk-status-option.status-欠席 input:checked + span {
+  border-color: #f0aaaa;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.bulk-status-option.status-未定 input:checked + span {
+  border-color: #e9cc77;
+  background: var(--yellow-soft);
+  color: var(--yellow);
+}
+
+.bulk-status-option.status-体入 input:checked + span {
+  border-color: #9dc4ff;
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
 .plan-total-list {
   display: flex;
   flex-wrap: wrap;
@@ -1116,10 +1202,15 @@ textarea:focus {
   }
 
   .form-grid,
+  .bulk-attendance-row,
   .drink-plan-form,
   .role-form,
   .side-nav {
     grid-template-columns: 1fr;
+  }
+
+  .bulk-status-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .span-2 {

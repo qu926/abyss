@@ -341,43 +341,34 @@ function renderCurrentPage() {
 
 function renderAttendancePage() {
   const event = findEvent(state, view.eventId);
-  const entry = getAttendanceEntry(state, view.eventId, view.attendanceUserId);
-  const isHoliday = event?.status === "休み";
+  const events = getActiveEvents(state)
+    .filter((item) => item.status !== "休み")
+    .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  const activeUsers = getActiveUsers(state);
   return `
     <section class="page-grid two-col">
       <div class="panel">
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Host</p>
-            <h2>勤怠入力</h2>
+            <h2>勤怠まとめ入力</h2>
           </div>
-          ${statusPill(event?.status || "未設定")}
+          <span class="capacity ok">${events.length}日分</span>
         </div>
-        ${isHoliday ? `<div class="notice muted">${formatDateLabel(event.event_date)} は休みです。この日は勤怠・予約入力対象外です。</div>` : ""}
-        <form class="stack" data-action="save-attendance">
-          <label>
-            <span>対象日</span>
-            <select name="event_date_id" data-role="event-select">
-              ${renderEventOptions(view.eventId)}
-            </select>
-          </label>
+        <form class="bulk-attendance-form" data-action="save-bulk-attendance">
           <label>
             <span>ホスト名</span>
             <select name="user_id" data-role="attendance-user-select">
-              ${getActiveUsers(state).map((user) => option(user.id, user.display_name, user.id === view.attendanceUserId)).join("")}
+              ${activeUsers.map((user) => option(user.id, user.display_name, user.id === view.attendanceUserId)).join("")}
             </select>
           </label>
-          <label>
-            <span>出欠</span>
-            <select name="status" ${isHoliday ? "disabled" : ""}>
-              ${ATTENDANCE_STATUSES.map((status) => option(status, status, status === (entry?.status || "出勤"))).join("")}
-            </select>
-          </label>
-          <label>
-            <span>メモ</span>
-            <textarea name="memo" rows="3" ${isHoliday ? "disabled" : ""}>${escapeHtml(entry?.memo || "")}</textarea>
-          </label>
-          <button class="primary-button" type="submit" ${isHoliday ? "disabled" : ""}>登録 / 更新する</button>
+          <p class="plan-note">各日程の出欠をまとめて選択できます。何も選んでいない日は未入力のままです。</p>
+          ${activeUsers.length && events.length ? `
+            <div class="bulk-attendance-list">
+              ${events.map((item) => renderBulkAttendanceRow(item)).join("")}
+            </div>
+            <button class="primary-button" type="submit">まとめて登録 / 更新する</button>
+          ` : `<p class="empty">入力対象の日程またはホストがありません。</p>`}
         </form>
       </div>
       <aside class="panel">
@@ -386,7 +377,14 @@ function renderAttendancePage() {
             <p class="eyebrow">Status</p>
             <h2>${event ? formatDateLabel(event.event_date) : "対象日未設定"}</h2>
           </div>
+          ${statusPill(event?.status || "未設定")}
         </div>
+        <label>
+          <span>確認する日付</span>
+          <select data-role="event-select">
+            ${renderEventOptions(view.eventId)}
+          </select>
+        </label>
         ${renderAttendanceSummaryCards(view.eventId)}
         <div class="subsection">
           <h3>未入力者</h3>
@@ -395,6 +393,38 @@ function renderAttendancePage() {
       </aside>
     </section>
   `;
+}
+
+function renderBulkAttendanceRow(event) {
+  const entry = getAttendanceEntry(state, event.id, view.attendanceUserId);
+  return `
+    <div class="bulk-attendance-row">
+      <input type="hidden" name="attendance_event_id" value="${event.id}">
+      <div class="bulk-date">
+        <h3>${formatDateLabel(event.event_date)}</h3>
+        <span>${formatDateTime(event.reservation_open_at)} 解放</span>
+      </div>
+      <div class="bulk-status-options" role="radiogroup" aria-label="${formatDateLabel(event.event_date)} の出欠">
+        ${ATTENDANCE_STATUSES.map((status) => `
+          <label class="bulk-status-option status-${status}">
+            <input name="status_${event.id}" type="radio" value="${status}" ${entry?.status === status ? "checked" : ""}>
+            <span>${bulkAttendanceLabel(status)}</span>
+          </label>
+        `).join("")}
+      </div>
+      <label class="bulk-memo">
+        <span>メモ</span>
+        <input name="memo_${event.id}" value="${escapeAttr(entry?.memo || "")}" placeholder="任意">
+      </label>
+    </div>
+  `;
+}
+
+function bulkAttendanceLabel(status) {
+  if (status === "出勤") return "○ 出勤";
+  if (status === "欠席") return "× 欠席";
+  if (status === "未定") return "△ 未定";
+  return status;
 }
 
 function renderStaffAttendancePage() {
@@ -1533,6 +1563,10 @@ function handleSubmit(event) {
     const result = upsertAttendance(state, data);
     applyResult(result, "勤怠を保存しました。");
   }
+  if (action === "save-bulk-attendance") {
+    saveBulkAttendance(form);
+    return;
+  }
   if (action === "save-staff-attendance") {
     const result = upsertStaffAttendance(state, data);
     applyResult(result, "内勤出勤を保存しました。");
@@ -1595,6 +1629,45 @@ function handleSubmit(event) {
     const result = upsertDrinkPlan(state, data);
     applyResult(result, "事前予定を保存しました。");
   }
+}
+
+function saveBulkAttendance(form) {
+  const formData = new FormData(form);
+  const userId = String(formData.get("user_id") || "");
+  const eventIds = formData.getAll("attendance_event_id").map(String);
+  let nextState = state;
+  let savedCount = 0;
+  const errors = [];
+  if (!userId) {
+    showToast("ホスト名を選択してください。", "error");
+    return;
+  }
+  view.attendanceUserId = userId;
+  for (const eventId of eventIds) {
+    const status = formData.get(`status_${eventId}`);
+    if (!status) continue;
+    const result = upsertAttendance(nextState, {
+      event_date_id: eventId,
+      user_id: userId,
+      status,
+      memo: formData.get(`memo_${eventId}`) || "",
+    });
+    if (!result.ok) {
+      errors.push(...(result.errors || ["保存できませんでした。"]));
+      continue;
+    }
+    nextState = result.state;
+    savedCount += 1;
+  }
+  if (errors.length) {
+    showToast(errors.join(" / "), "error");
+    return;
+  }
+  if (!savedCount) {
+    showToast("出欠を選択してください。", "error");
+    return;
+  }
+  saveState(nextState, `${savedCount}日分の勤怠を保存しました。`);
 }
 
 function handleChange(event) {
