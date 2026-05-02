@@ -391,6 +391,63 @@ textarea:focus {
   color: var(--muted);
 }
 
+.inline-pill.active {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.role-manager {
+  margin-bottom: 16px;
+}
+
+.role-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.role-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  padding: 6px 8px 6px 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.role-chip.is-disabled {
+  background: var(--gray-soft);
+  color: var(--muted);
+}
+
+.role-chip button {
+  min-height: 26px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: #fff;
+  color: inherit;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .status-欠席 {
   background: var(--red-soft);
   color: var(--red);
@@ -938,6 +995,7 @@ textarea:focus {
 
   .form-grid,
   .drink-plan-form,
+  .role-form,
   .side-nav {
     grid-template-columns: 1fr;
   }
