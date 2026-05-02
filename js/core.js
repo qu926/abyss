@@ -1,5 +1,6 @@
 export const ROLES = ["幹部", "ホスト", "体入"];
 export const ATTENDANCE_STATUSES = ["出勤", "欠席", "未定", "体入"];
+export const STAFF_ATTENDANCE_STATUSES = ["出勤", "欠席", "未定"];
 export const EVENT_STATUSES = ["受付中", "終了", "休み"];
 export const ATTRIBUTES = ["初回", "リピ", "初回指名", "指名", "要確認"];
 export const TIME_SLOTS = ["前半", "後半"];
@@ -135,9 +136,11 @@ export function buildDefaultState(baseDate = new Date()) {
       makeUser("u_trial", "体入ゲスト", "たいにゅうげすと", "体入", stamp),
     ],
     roles: ROLES.map((name) => makeRole(`role_${name}`, name, stamp)),
+    staff_members: [],
     long_vacations: [],
     event_dates: buildEventDates(now, stamp),
     attendance_entries: [],
+    staff_attendance_entries: [],
     reservations: [],
     drink_plans: [],
     histories: [],
@@ -205,6 +208,19 @@ export function getActiveUsers(state) {
   return sortedUsers(state.users.filter((user) => user.is_active));
 }
 
+export function sortedStaffMembers(staffMembers) {
+  return [...staffMembers].sort((a, b) => {
+    const type = (a.staff_type || "").localeCompare(b.staff_type || "", "ja");
+    if (type) return type;
+    const kana = (a.kana || "").localeCompare(b.kana || "", "ja");
+    return kana || (a.display_name || "").localeCompare(b.display_name || "", "ja");
+  });
+}
+
+export function getActiveStaffMembers(state) {
+  return sortedStaffMembers((state.staff_members || []).filter((member) => member.is_active));
+}
+
 export function getRoles(state, includeInactive = false) {
   const roleNames = [...ROLES, ...(state.roles || []).map((role) => role.name), ...(state.users || []).map((user) => user.role)]
     .map((name) => String(name || "").trim())
@@ -224,6 +240,10 @@ export function findEvent(state, eventId) {
 
 export function findUser(state, userId) {
   return state.users.find((user) => user.id === userId) || null;
+}
+
+export function findStaffMember(state, staffMemberId) {
+  return (state.staff_members || []).find((member) => member.id === staffMemberId) || null;
 }
 
 export function isOnVacation(state, userId, eventDate) {
@@ -281,11 +301,51 @@ export function getAttendanceSummary(state, eventId) {
   return summary;
 }
 
+export function getStaffAttendanceEntry(state, eventId, staffMemberId) {
+  return (state.staff_attendance_entries || []).find((entry) => {
+    return entry.event_date_id === eventId && entry.staff_member_id === staffMemberId && !entry.is_deleted;
+  }) || null;
+}
+
+export function getStaffAttendanceEntriesForEvent(state, eventId) {
+  return (state.staff_attendance_entries || []).filter((entry) => entry.event_date_id === eventId && !entry.is_deleted);
+}
+
+export function getMissingStaffMembers(state, eventId) {
+  const event = findEvent(state, eventId);
+  if (!event || event.status === "休み") return [];
+  return getActiveStaffMembers(state).filter((member) => !getStaffAttendanceEntry(state, eventId, member.id));
+}
+
+export function getStaffAttendanceSummary(state, eventId) {
+  const event = findEvent(state, eventId);
+  const summary = { 出勤: 0, 欠席: 0, 未定: 0, 未入力: 0 };
+  if (!event || event.status === "休み") return summary;
+  for (const member of getActiveStaffMembers(state)) {
+    const entry = getStaffAttendanceEntry(state, eventId, member.id);
+    if (!entry) {
+      summary.未入力 += 1;
+      continue;
+    }
+    summary[entry.status] = (summary[entry.status] || 0) + 1;
+  }
+  return summary;
+}
+
 export function normalizeAttendance(input) {
   return {
     event_date_id: input.event_date_id,
     user_id: input.user_id,
     status: ATTENDANCE_STATUSES.includes(input.status) ? input.status : "未定",
+    memo: input.memo || "",
+  };
+}
+
+export function normalizeStaffAttendance(input) {
+  return {
+    event_date_id: input.event_date_id,
+    staff_member_id: input.staff_member_id,
+    status: STAFF_ATTENDANCE_STATUSES.includes(input.status) ? input.status : "未定",
     memo: input.memo || "",
   };
 }
@@ -319,6 +379,39 @@ export function upsertAttendance(state, input, now = new Date()) {
     draft.attendance_entries.push(after);
   }
   pushHistory(draft, "attendance", after.id, before, after, stamp, before ? "勤怠を更新" : "勤怠を登録");
+  touch(draft, stamp);
+  return { state: draft, ok: true, entry: after, errors: [] };
+}
+
+export function upsertStaffAttendance(state, input, now = new Date()) {
+  const draft = clone(state);
+  draft.staff_attendance_entries ||= [];
+  const payload = normalizeStaffAttendance(input);
+  const event = findEvent(draft, payload.event_date_id);
+  if (!event || event.status === "休み") {
+    return { state, ok: false, errors: ["休み日は内勤出勤入力対象外です。"] };
+  }
+  const staffMember = findStaffMember(draft, payload.staff_member_id);
+  if (!staffMember) return { state, ok: false, errors: ["対象内勤が見つかりません。"] };
+  const stamp = new Date(now).toISOString();
+  const existing = getStaffAttendanceEntry(draft, payload.event_date_id, payload.staff_member_id);
+  const before = existing ? clone(existing) : null;
+  const after = {
+    ...(existing || {
+      id: createId("staff_att"),
+      event_date_id: payload.event_date_id,
+      staff_member_id: payload.staff_member_id,
+      created_at: stamp,
+      deleted_at: null,
+      is_deleted: false,
+    }),
+    status: payload.status,
+    memo: payload.memo,
+    updated_at: stamp,
+  };
+  if (existing) Object.assign(existing, after);
+  else draft.staff_attendance_entries.push(after);
+  pushHistory(draft, "staff_attendance", after.id, before, after, stamp, before ? "内勤出勤を更新" : "内勤出勤を登録");
   touch(draft, stamp);
   return { state: draft, ok: true, entry: after, errors: [] };
 }
@@ -669,6 +762,8 @@ export function getDashboardIssues(state, eventId) {
   const issues = [];
   const missing = getMissingUsers(state, eventId);
   if (missing.length) issues.push({ level: "warn", text: `未入力者 ${missing.length}人` });
+  const missingStaff = getMissingStaffMembers(state, eventId);
+  if (missingStaff.length) issues.push({ level: "warn", text: `内勤未入力 ${missingStaff.length}人` });
 
   const seats = getSeatLimitStatuses(state, eventId);
   for (const [key, item] of Object.entries(seats)) {
@@ -720,6 +815,35 @@ export function setUserActive(state, userId, isActive, now = new Date()) {
   const user = state.users.find((item) => item.id === userId);
   if (!user) return { state, ok: false, errors: ["対象ホストが見つかりません。"] };
   return upsertUser(state, { ...user, is_active: isActive }, now);
+}
+
+export function upsertStaffMember(state, input, now = new Date()) {
+  const draft = clone(state);
+  draft.staff_members ||= [];
+  const stamp = new Date(now).toISOString();
+  const existing = input.id ? draft.staff_members.find((member) => member.id === input.id) : null;
+  const before = existing ? clone(existing) : null;
+  const after = {
+    ...(existing || { id: createId("staff"), created_at: stamp }),
+    display_name: (input.display_name || "").trim(),
+    kana: (input.kana || "").trim(),
+    staff_type: (input.staff_type || "内勤").trim() || "内勤",
+    is_active: Boolean(input.is_active),
+    note: input.note || "",
+    updated_at: stamp,
+  };
+  if (!after.display_name) return { state, ok: false, errors: ["内勤名を入力してください。"] };
+  if (existing) Object.assign(existing, after);
+  else draft.staff_members.push(after);
+  pushHistory(draft, "staff_member", after.id, before, after, stamp, before ? "内勤を編集" : "内勤を追加");
+  touch(draft, stamp);
+  return { state: draft, ok: true, staffMember: after, errors: [] };
+}
+
+export function setStaffMemberActive(state, staffMemberId, isActive, now = new Date()) {
+  const staffMember = findStaffMember(state, staffMemberId);
+  if (!staffMember) return { state, ok: false, errors: ["対象内勤が見つかりません。"] };
+  return upsertStaffMember(state, { ...staffMember, is_active: isActive }, now);
 }
 
 export function upsertRole(state, input, now = new Date()) {
