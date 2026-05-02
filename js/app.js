@@ -155,9 +155,16 @@ async function initializeSharedState() {
     render();
   } catch (error) {
     console.error(error);
-    syncStatus = { mode: "error", text: "共有DBに接続できません。ローカル保存で表示中" };
+    syncStatus = { mode: "error", text: shortSyncError(error, "共有DBに接続できません") };
     render();
   }
+}
+
+function shortSyncError(error, fallback) {
+  const message = String(error?.message || error || fallback);
+  const status = message.match(/Supabase (?:load|save) failed: (\d+)/)?.[1];
+  if (status) return `${fallback} (${status})`;
+  return fallback;
 }
 
 async function loadSharedState() {
@@ -167,7 +174,7 @@ async function loadSharedState() {
   const response = await fetch(url, {
     headers: getSupabaseHeaders(),
   });
-  if (!response.ok) throw new Error(`Supabase load failed: ${response.status}`);
+  if (!response.ok) throw new Error(`Supabase load failed: ${response.status} ${await response.text()}`);
   const rows = await response.json();
   const payload = rows[0]?.payload;
   return payload && Object.keys(payload).length ? payload : null;
@@ -189,14 +196,15 @@ async function saveSharedState(nextState) {
       updated_at: new Date().toISOString(),
     }),
   });
-  if (!response.ok) throw new Error(`Supabase save failed: ${response.status}`);
+  if (!response.ok) throw new Error(`Supabase save failed: ${response.status} ${await response.text()}`);
 }
 
 function getSupabaseHeaders() {
-  return {
-    apikey: APP_CONFIG.supabaseAnonKey,
-    Authorization: `Bearer ${APP_CONFIG.supabaseAnonKey}`,
-  };
+  const headers = { apikey: APP_CONFIG.supabaseAnonKey };
+  if (!String(APP_CONFIG.supabaseAnonKey).startsWith("sb_publishable_")) {
+    headers.Authorization = `Bearer ${APP_CONFIG.supabaseAnonKey}`;
+  }
+  return headers;
 }
 
 function saveState(nextState, message = "保存しました。") {
@@ -210,7 +218,7 @@ function saveState(nextState, message = "保存しました。") {
       })
       .catch((error) => {
         console.error(error);
-        syncStatus = { mode: "error", text: "共有DBへの保存に失敗。ローカルには保存済み" };
+        syncStatus = { mode: "error", text: shortSyncError(error, "共有DBへの保存に失敗") };
         render();
       });
   }
