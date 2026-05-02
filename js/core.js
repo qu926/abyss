@@ -134,12 +134,23 @@ export function buildDefaultState(baseDate = new Date()) {
       makeUser("u_mira", "美蘭", "みら", "ホスト", stamp),
       makeUser("u_trial", "体入ゲスト", "たいにゅうげすと", "体入", stamp),
     ],
+    roles: ROLES.map((name) => makeRole(`role_${name}`, name, stamp)),
     long_vacations: [],
     event_dates: buildEventDates(now, stamp),
     attendance_entries: [],
     reservations: [],
     drink_plans: [],
     histories: [],
+  };
+}
+
+function makeRole(id, name, stamp) {
+  return {
+    id,
+    name,
+    is_active: true,
+    created_at: stamp,
+    updated_at: stamp,
   };
 }
 
@@ -192,6 +203,19 @@ export function sortedUsers(users) {
 
 export function getActiveUsers(state) {
   return sortedUsers(state.users.filter((user) => user.is_active));
+}
+
+export function getRoles(state, includeInactive = false) {
+  const roleNames = [...ROLES, ...(state.roles || []).map((role) => role.name), ...(state.users || []).map((user) => user.role)]
+    .map((name) => String(name || "").trim())
+    .filter(Boolean);
+  const unique = [...new Set(roleNames)];
+  return unique
+    .map((name) => {
+      const existing = (state.roles || []).find((role) => role.name === name);
+      return existing || { id: `role_${name}`, name, is_active: true };
+    })
+    .filter((role) => includeInactive || role.is_active !== false);
 }
 
 export function findEvent(state, eventId) {
@@ -679,7 +703,7 @@ export function upsertUser(state, input, now = new Date()) {
     ...(existing || { id: createId("user"), created_at: stamp }),
     display_name: (input.display_name || "").trim(),
     kana: (input.kana || "").trim(),
-    role: ROLES.includes(input.role) ? input.role : "ホスト",
+    role: (input.role || "ホスト").trim() || "ホスト",
     is_active: Boolean(input.is_active),
     note: input.note || "",
     updated_at: stamp,
@@ -690,6 +714,40 @@ export function upsertUser(state, input, now = new Date()) {
   pushHistory(draft, "user", after.id, before, after, stamp, before ? "ホストを編集" : "ホストを追加");
   touch(draft, stamp);
   return { state: draft, ok: true, user: after, errors: [] };
+}
+
+export function setUserActive(state, userId, isActive, now = new Date()) {
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) return { state, ok: false, errors: ["対象ホストが見つかりません。"] };
+  return upsertUser(state, { ...user, is_active: isActive }, now);
+}
+
+export function upsertRole(state, input, now = new Date()) {
+  const draft = clone(state);
+  draft.roles ||= [];
+  const stamp = new Date(now).toISOString();
+  const name = (input.name || "").trim();
+  if (!name) return { state, ok: false, errors: ["ロール名を入力してください。"] };
+  const existing = input.id
+    ? draft.roles.find((role) => role.id === input.id)
+    : draft.roles.find((role) => role.name === name);
+  const before = existing ? clone(existing) : null;
+  const after = {
+    ...(existing || { id: createId("role"), created_at: stamp }),
+    name,
+    is_active: input.is_active !== false,
+    updated_at: stamp,
+  };
+  if (existing) Object.assign(existing, after);
+  else draft.roles.push(after);
+  pushHistory(draft, "role", after.id, before, after, stamp, before ? "ロールを編集" : "ロールを追加");
+  touch(draft, stamp);
+  return { state: draft, ok: true, role: after, errors: [] };
+}
+
+export function setRoleActive(state, roleName, isActive, now = new Date()) {
+  const existing = (state.roles || []).find((role) => role.name === roleName);
+  return upsertRole(state, { ...(existing || {}), name: roleName, is_active: isActive }, now);
 }
 
 export function upsertVacation(state, input, now = new Date()) {
