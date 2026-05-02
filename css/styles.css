@@ -123,6 +123,10 @@ h3 {
   justify-content: flex-end;
 }
 
+.toolbar.compact {
+  flex-wrap: wrap;
+}
+
 .nav-button,
 .side-button,
 .ghost-button,
@@ -149,6 +153,31 @@ h3 {
 .nav-button.is-active,
 .side-button.is-active {
   border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+
+.tab-switch {
+  display: inline-flex;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  padding: 4px;
+}
+
+.tab-button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.tab-button.is-active {
   background: var(--blue);
   color: #fff;
 }
@@ -657,6 +686,94 @@ textarea:focus {
   min-width: 760px;
 }
 
+.tower-overview {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.tower-summary-list {
+  display: grid;
+  gap: 10px;
+}
+
+.tower-summary-item {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  padding: 14px;
+}
+
+.tower-summary-item.full {
+  border-color: #e4a16d;
+  background: var(--orange-soft);
+}
+
+.tower-summary-item.over {
+  border-color: #f0aaaa;
+  background: var(--red-soft);
+}
+
+.tower-summary-main,
+.tower-counts,
+.tower-detail-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tower-counts {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.tower-counts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.tower-counts strong {
+  color: var(--blue);
+}
+
+.tower-detail-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tower-detail-list li {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  padding: 10px;
+}
+
+.tower-detail-list strong {
+  font-size: 13px;
+}
+
+.tower-detail-list em {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 700;
+}
+
 .archive-list {
   display: grid;
   gap: 10px;
@@ -946,8 +1063,13 @@ textarea:focus {
   }
 
   .top-nav .nav-button,
+  .toolbar .tab-switch,
   .toolbar select {
     flex: 1 1 auto;
+  }
+
+  .toolbar .tab-button {
+    flex: 1 1 0;
   }
 
   .two-col,
@@ -1002,6 +1124,12 @@ textarea:focus {
 
   .span-2 {
     grid-column: auto;
+  }
+
+  .tower-summary-main,
+  .tower-detail-list li {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .reservation-grid {
@@ -1121,7 +1249,18 @@ textarea:focus {
   }
 
   .toolbar.compact {
+    align-items: stretch;
     flex-direction: column;
+  }
+
+  .toolbar.compact .tab-switch,
+  .toolbar.compact select,
+  .toolbar.compact .status-pill {
+    width: 100%;
+  }
+
+  .toolbar.compact .status-pill {
+    justify-content: center;
   }
 
   .toast {

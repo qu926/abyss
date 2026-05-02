@@ -22,6 +22,7 @@ import {
   formatDateTime,
   generateAttendanceDiscordText,
   generateReservationDiscordText,
+  getActiveEvents,
   getActiveUsers,
   getArchivedEvents,
   getAttendanceEntry,
@@ -29,9 +30,11 @@ import {
   getAttendanceSummary,
   getDashboardIssues,
   getDrinkLimitStatuses,
+  getDrinkTotals,
   getDrinkPlanTotals,
   getDrinkPlansForEvent,
   getGroupLabels,
+  getLimitStatus,
   getMissingUsers,
   getReservationOpenAt,
   getReservationWarnings,
@@ -89,6 +92,7 @@ let view = {
   archiveEventId: "",
   attendanceUserId: "",
   staffAttendanceMemberId: "",
+  reservationTab: "grid",
   editingUserId: "",
   editingStaffMemberId: "",
   editingVacationId: "",
@@ -466,18 +470,28 @@ function renderReservationPage(adminMode) {
           <h2>${event ? formatDateLabel(event.event_date) : "予約入力"}</h2>
         </div>
         <div class="toolbar compact">
+          <div class="tab-switch" aria-label="予約表示切替">
+            ${reservationTabButton("grid", "予約入力")}
+            ${reservationTabButton("towers", "タワー一覧")}
+          </div>
           <select data-role="event-select" aria-label="対象日">
             ${renderEventOptions(view.eventId)}
           </select>
           ${statusPill(event?.status || "未設定")}
         </div>
       </div>
-      ${renderReservationOpenNotice(event, adminMode)}
-      ${isHoliday ? `<div class="notice muted">この日は休みです。勤怠・予約入力対象外です。</div>` : ""}
-      ${renderDrinkPlans(event?.id || "", { locked: Boolean(isHoliday || (event && isEventArchived(event))) })}
-      ${renderReservationGrid(view.eventId, { adminMode, locked: Boolean(locked || isHoliday) })}
+      ${view.reservationTab === "towers" ? renderTowerScheduleOverview() : `
+        ${renderReservationOpenNotice(event, adminMode)}
+        ${isHoliday ? `<div class="notice muted">この日は休みです。勤怠・予約入力対象外です。</div>` : ""}
+        ${renderDrinkPlans(event?.id || "", { locked: Boolean(isHoliday || (event && isEventArchived(event))) })}
+        ${renderReservationGrid(view.eventId, { adminMode, locked: Boolean(locked || isHoliday) })}
+      `}
     </section>
   `;
+}
+
+function reservationTabButton(tab, label) {
+  return `<button class="tab-button ${view.reservationTab === tab ? "is-active" : ""}" data-action="reservation-tab" data-tab="${tab}" type="button">${label}</button>`;
 }
 
 function renderReservationOpenNotice(event, adminMode) {
@@ -551,6 +565,69 @@ function renderDrinkPlanList(plans, locked) {
       </table>
     </div>
   `;
+}
+
+function renderTowerScheduleOverview() {
+  const events = getActiveEvents(state)
+    .filter((event) => event.status !== "休み")
+    .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  if (!events.length) return `<p class="empty">今後の開催日はありません。</p>`;
+  return `
+    <section class="tower-overview">
+      <div class="section-title">
+        <h3>この先のタワー予約状況</h3>
+        <span class="capacity ok">空き日をまとめて確認</span>
+      </div>
+      <div class="tower-summary-list">
+        ${events.map((event) => renderTowerScheduleItem(event)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderTowerScheduleItem(event) {
+  const actualTowerCount = getDrinkTotals(state, event.id).tower || 0;
+  const plannedTowers = getDrinkPlansForEvent(state, event.id).filter((plan) => plan.item_type === "tower");
+  const plannedTowerCount = plannedTowers.reduce((total, plan) => total + (Number(plan.count) || 0), 0);
+  const total = actualTowerCount + plannedTowerCount;
+  const towerLimit = DRINK_LIMITS.tower.limit;
+  const { level } = getLimitStatus(total, towerLimit);
+  const reservations = getReservationsForEvent(state, event.id).filter((reservation) => Number(reservation.tower_count) > 0);
+  return `
+    <article class="tower-summary-item ${level}">
+      <div class="tower-summary-main">
+        <div>
+          <p class="eyebrow">Tower</p>
+          <h3>${formatDateLabel(event.event_date)}</h3>
+        </div>
+        <span class="capacity ${level}">${total} / ${towerLimit} ${total === 0 ? "空き" : total <= towerLimit ? "予定あり" : `超過 +${total - towerLimit}`}</span>
+      </div>
+      <div class="tower-counts">
+        <span>実予約 <strong>${actualTowerCount}</strong></span>
+        <span>事前予定 <strong>${plannedTowerCount}</strong></span>
+      </div>
+      ${reservations.length || plannedTowers.length ? `
+        <ul class="tower-detail-list">
+          ${reservations.map((reservation) => renderTowerReservationDetail(reservation)).join("")}
+          ${plannedTowers.map((plan) => renderTowerPlanDetail(plan)).join("")}
+        </ul>
+      ` : `<p class="empty">タワー予定なし</p>`}
+    </article>
+  `;
+}
+
+function renderTowerReservationDetail(reservation) {
+  const hostName = findUser(state, reservation.host_user_id)?.display_name || "未選択";
+  const slot = `${getTimeSlotLabel(reservation.time_slot)} ${reservation.seat_type} ${reservation.group_no}`;
+  const guest = reservation.princess_name ? ` / ${reservation.princess_name}` : "";
+  const memo = reservation.memo ? ` / ${reservation.memo}` : "";
+  return `<li><span class="inline-pill active">実予約</span><strong>${escapeHtml(slot)}</strong><em>${escapeHtml(hostName)}${escapeHtml(guest)}${escapeHtml(memo)}</em></li>`;
+}
+
+function renderTowerPlanDetail(plan) {
+  const hostName = findUser(state, plan.host_user_id)?.display_name || "未選択";
+  const memo = plan.memo ? ` / ${plan.memo}` : "";
+  return `<li><span class="inline-pill muted">事前予定</span><strong>${escapeHtml(getTimeSlotLabel(plan.time_slot))}</strong><em>${escapeHtml(hostName)} / ${Number(plan.count) || 0}本${escapeHtml(memo)}</em></li>`;
 }
 
 function renderReservationGrid(eventId, { adminMode = false, locked = false } = {}) {
@@ -1330,6 +1407,11 @@ function handleClick(event) {
   }
   if (action === "admin-tab") {
     view.adminTab = button.dataset.tab;
+    render();
+    return;
+  }
+  if (action === "reservation-tab") {
+    view.reservationTab = button.dataset.tab;
     render();
     return;
   }
