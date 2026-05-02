@@ -7,6 +7,7 @@ import {
   RESERVATION_SEAT_ORDER,
   SEAT_TYPES,
   SLOT_LIMITS,
+  STAFF_ATTENDANCE_STATUSES,
   TIME_SLOTS,
   buildDefaultState,
   archiveFinishedEvents,
@@ -36,14 +37,20 @@ import {
   getReservationsForEvent,
   getRoles,
   getSeatLimitStatuses,
+  getActiveStaffMembers,
   getTimeSlotLabel,
+  getMissingStaffMembers,
+  getStaffAttendanceEntry,
+  getStaffAttendanceSummary,
   getVacationExemptUsers,
   isEventArchived,
   isOnVacation,
   isReservationOpen,
   normalizeReservation,
   setRoleActive,
+  setStaffMemberActive,
   setUserActive,
+  sortedStaffMembers,
   sortedUsers,
   toLocalDateTimeString,
   upsertAttendance,
@@ -51,6 +58,8 @@ import {
   upsertEvent,
   upsertReservation,
   upsertRole,
+  upsertStaffAttendance,
+  upsertStaffMember,
   upsertUser,
   upsertVacation,
 } from "./core.js";
@@ -79,6 +88,7 @@ let view = {
   archiveEventId: "",
   attendanceUserId: "",
   editingUserId: "",
+  editingStaffMemberId: "",
   editingVacationId: "",
   editingEventId: "",
 };
@@ -115,6 +125,8 @@ function migrateState(saved) {
     ...saved,
     drink_plans: saved.drink_plans || [],
     roles: saved.roles || fresh.roles,
+    staff_members: saved.staff_members || [],
+    staff_attendance_entries: saved.staff_attendance_entries || [],
     settings: { ...fresh.settings, ...(saved.settings || {}) },
     meta: { ...fresh.meta, ...(saved.meta || {}) },
   };
@@ -586,8 +598,10 @@ function renderAdminPage() {
         <div class="side-nav">
           ${adminTabButton("dashboard", "運営トップ")}
           ${adminTabButton("attendance", "勤怠管理")}
+          ${adminTabButton("staffAttendance", "内勤出勤")}
           ${adminTabButton("missing", "未入力者")}
           ${adminTabButton("hosts", "ホスト一覧")}
+          ${adminTabButton("staff", "内勤一覧")}
           ${adminTabButton("vacations", "長期休暇")}
           ${adminTabButton("events", "イベント日")}
           ${adminTabButton("reservations", "予約管理")}
@@ -632,8 +646,10 @@ function adminTabButton(tab, label) {
 
 function renderAdminContent() {
   if (view.adminTab === "attendance") return renderAdminAttendance();
+  if (view.adminTab === "staffAttendance") return renderAdminStaffAttendance();
   if (view.adminTab === "missing") return renderAdminMissing();
   if (view.adminTab === "hosts") return renderHostManagement();
+  if (view.adminTab === "staff") return renderStaffManagement();
   if (view.adminTab === "vacations") return renderVacationManagement();
   if (view.adminTab === "events") return renderEventManagement();
   if (view.adminTab === "reservations") return renderReservationPage(true);
@@ -661,6 +677,10 @@ function renderAdminDashboard() {
         <div class="mini-panel">
           <h3>勤怠</h3>
           ${renderAttendanceSummaryCards(view.eventId)}
+        </div>
+        <div class="mini-panel">
+          <h3>内勤</h3>
+          ${renderStaffAttendanceSummaryCards(view.eventId)}
         </div>
         <div class="mini-panel">
           <h3>予約枠</h3>
@@ -713,9 +733,57 @@ function renderAdminAttendance() {
   `;
 }
 
+function renderAdminStaffAttendance() {
+  const event = findEvent(state, view.eventId);
+  const staffMembers = getActiveStaffMembers(state);
+  const rows = staffMembers.map((member) => {
+    const entry = getStaffAttendanceEntry(state, view.eventId, member.id);
+    return `
+      <tr>
+        <td>${escapeHtml(member.display_name)}</td>
+        <td>${escapeHtml(member.staff_type || "内勤")}</td>
+        <td>
+          <select data-field="status">
+            ${STAFF_ATTENDANCE_STATUSES.map((status) => option(status, status, status === (entry?.status || "出勤"))).join("")}
+          </select>
+        </td>
+        <td><input data-field="memo" value="${escapeAttr(entry?.memo || "")}"></td>
+        <td><button class="icon-button save" data-action="admin-save-staff-attendance" data-staff-member-id="${member.id}" type="button">保存</button></td>
+      </tr>
+    `;
+  }).join("");
+  return `
+    <section class="panel page-panel">
+      <div class="panel-heading wide-heading">
+        <div><p class="eyebrow">Staff Attendance</p><h2>${event ? formatDateLabel(event.event_date) : ""} 内勤出勤管理</h2></div>
+        ${statusPill(event?.status || "未設定")}
+      </div>
+      <div class="split">
+        <div class="mini-panel">
+          <h3>内勤サマリー</h3>
+          ${renderStaffAttendanceSummaryCards(view.eventId)}
+        </div>
+        <div class="mini-panel">
+          <h3>未入力</h3>
+          ${renderNameList(getMissingStaffMembers(state, view.eventId), "内勤の未入力者はいません。")}
+        </div>
+      </div>
+      ${staffMembers.length ? `
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>内勤</th><th>区分</th><th>出欠</th><th>メモ</th><th>操作</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      ` : `<p class="empty">内勤スタッフが未登録です。「内勤一覧」から追加してください。</p>`}
+    </section>
+  `;
+}
+
 function renderAdminMissing() {
   const event = findEvent(state, view.eventId);
   const missing = getMissingUsers(state, view.eventId);
+  const missingStaff = getMissingStaffMembers(state, view.eventId);
   const exempt = getVacationExemptUsers(state, view.eventId);
   return `
     <section class="panel page-panel">
@@ -726,6 +794,10 @@ function renderAdminMissing() {
         <div class="mini-panel">
           <h3>未入力</h3>
           ${renderNameList(missing, "未入力者はいません。")}
+        </div>
+        <div class="mini-panel">
+          <h3>内勤未入力</h3>
+          ${renderNameList(missingStaff, "内勤の未入力者はいません。")}
         </div>
         <div class="mini-panel">
           <h3>催促対象外</h3>
@@ -798,6 +870,55 @@ function renderHostManagement() {
                 </td>
               </tr>
             `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function renderStaffManagement() {
+  const editing = view.editingStaffMemberId
+    ? state.staff_members.find((member) => member.id === view.editingStaffMemberId)
+    : null;
+  const staffMembers = sortedStaffMembers(state.staff_members || []);
+  return `
+    <section class="panel page-panel">
+      <div class="panel-heading">
+        <div><p class="eyebrow">Staff</p><h2>内勤一覧管理</h2></div>
+        ${editing ? `<button class="ghost-button" data-action="new-staff-member" type="button">新規追加に戻る</button>` : ""}
+      </div>
+      <form class="form-grid" data-action="save-staff-member">
+        <input type="hidden" name="id" value="${editing?.id || ""}">
+        <label><span>内勤名</span><input name="display_name" value="${escapeAttr(editing?.display_name || "")}" required></label>
+        <label><span>読み仮名</span><input name="kana" value="${escapeAttr(editing?.kana || "")}"></label>
+        <label><span>区分</span><input name="staff_type" value="${escapeAttr(editing?.staff_type || "内勤")}" placeholder="例: 内勤 / 受付 / 会計"></label>
+        <label class="check-label"><input name="is_active" type="checkbox" ${editing?.is_active !== false ? "checked" : ""}> 有効</label>
+        <label class="span-2"><span>メモ</span><input name="note" value="${escapeAttr(editing?.note || "")}"></label>
+        <button class="primary-button" type="submit">${editing ? "更新する" : "追加する"}</button>
+      </form>
+      <div class="notice muted">ホスト一覧とは別管理です。ここに登録した人だけが「内勤出勤」の対象になります。</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>内勤名</th><th>読み</th><th>区分</th><th>状態</th><th>メモ</th><th>操作</th></tr></thead>
+          <tbody>
+            ${staffMembers.map((member) => `
+              <tr>
+                <td>${escapeHtml(member.display_name)}</td>
+                <td>${escapeHtml(member.kana || "")}</td>
+                <td>${escapeHtml(member.staff_type || "内勤")}</td>
+                <td>${member.is_active ? `<span class="inline-pill active">有効</span>` : `<span class="inline-pill muted">無効</span>`}</td>
+                <td>${escapeHtml(member.note || "")}</td>
+                <td>
+                  <div class="row-actions">
+                    <button class="icon-button" data-action="edit-staff-member" data-staff-member-id="${member.id}" type="button">編集</button>
+                    ${member.is_active
+                      ? `<button class="icon-button danger" data-action="disable-staff-member" data-staff-member-id="${member.id}" type="button">無効化</button>`
+                      : `<button class="icon-button save" data-action="enable-staff-member" data-staff-member-id="${member.id}" type="button">有効化</button>`}
+                  </div>
+                </td>
+              </tr>
+            `).join("") || `<tr><td colspan="6">内勤スタッフは未登録です。</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -1079,6 +1200,15 @@ function renderAttendanceSummaryCards(eventId) {
   `;
 }
 
+function renderStaffAttendanceSummaryCards(eventId) {
+  const summary = getStaffAttendanceSummary(state, eventId);
+  return `
+    <div class="summary-grid">
+      ${Object.entries(summary).map(([key, value]) => `<div class="summary-card status-${key}"><span>${key}</span><strong>${value}</strong></div>`).join("")}
+    </div>
+  `;
+}
+
 function renderSeatStatusList(eventId) {
   const statuses = getSeatLimitStatuses(state, eventId);
   return `<ul class="status-list">${Object.entries(statuses)
@@ -1150,9 +1280,23 @@ function handleClick(event) {
   if (action === "delete-reservation") deleteReservationFromRow(button);
   if (action === "delete-drink-plan") deleteDrinkPlanFromButton(button);
   if (action === "admin-save-attendance") saveAdminAttendance(button);
+  if (action === "admin-save-staff-attendance") saveAdminStaffAttendance(button);
   if (action === "edit-user") {
     view.editingUserId = button.dataset.userId;
     render();
+  }
+  if (action === "edit-staff-member") {
+    view.editingStaffMemberId = button.dataset.staffMemberId;
+    render();
+  }
+  if (action === "disable-staff-member") {
+    disableStaffMemberFromButton(button);
+    return;
+  }
+  if (action === "enable-staff-member") {
+    const result = setStaffMemberActive(state, button.dataset.staffMemberId, true);
+    applyResult(result, "内勤を有効化しました。");
+    return;
   }
   if (action === "disable-user") {
     disableUserFromButton(button);
@@ -1175,6 +1319,10 @@ function handleClick(event) {
   }
   if (action === "new-user") {
     view.editingUserId = "";
+    render();
+  }
+  if (action === "new-staff-member") {
+    view.editingStaffMemberId = "";
     render();
   }
   if (action === "edit-vacation") {
@@ -1209,6 +1357,19 @@ function disableUserFromButton(button) {
   const result = setUserActive(state, user.id, false);
   if (result.ok && view.editingUserId === user.id) view.editingUserId = "";
   applyResult(result, "ホストを無効化しました。");
+}
+
+function disableStaffMemberFromButton(button) {
+  const staffMember = state.staff_members.find((member) => member.id === button.dataset.staffMemberId);
+  if (!staffMember) {
+    showToast("対象内勤が見つかりません。", "error");
+    return;
+  }
+  const ok = window.confirm(`${staffMember.display_name} を無効化します。内勤出勤の入力候補と未入力判定から外れます。過去の出勤履歴には名前が残ります。`);
+  if (!ok) return;
+  const result = setStaffMemberActive(state, staffMember.id, false);
+  if (result.ok && view.editingStaffMemberId === staffMember.id) view.editingStaffMemberId = "";
+  applyResult(result, "内勤を無効化しました。");
 }
 
 function handleSubmit(event) {
@@ -1253,6 +1414,11 @@ function handleSubmit(event) {
     const result = upsertUser(state, { ...data, is_active: form.elements.is_active.checked });
     if (result.ok) view.editingUserId = "";
     applyResult(result, "ホスト情報を保存しました。");
+  }
+  if (action === "save-staff-member") {
+    const result = upsertStaffMember(state, { ...data, is_active: form.elements.is_active.checked });
+    if (result.ok) view.editingStaffMemberId = "";
+    applyResult(result, "内勤情報を保存しました。");
   }
   if (action === "save-role") {
     const result = upsertRole(state, { name: data.name, is_active: true });
@@ -1361,6 +1527,18 @@ function saveAdminAttendance(button) {
   applyResult(result, "勤怠を保存しました。");
 }
 
+function saveAdminStaffAttendance(button) {
+  const tr = button.closest("tr");
+  const payload = {
+    event_date_id: view.eventId,
+    staff_member_id: button.dataset.staffMemberId,
+    status: tr.querySelector("[data-field='status']").value,
+    memo: tr.querySelector("[data-field='memo']").value,
+  };
+  const result = upsertStaffAttendance(state, payload);
+  applyResult(result, "内勤出勤を保存しました。");
+}
+
 function applyResult(result, successMessage) {
   if (!result.ok) {
     showToast((result.errors || ["保存できませんでした。"]).join(" / "), "error");
@@ -1404,6 +1582,7 @@ function summarizePayload(payload) {
   const copy = clone(payload);
   const keys = [
     "display_name",
+    "staff_type",
     "event_date",
     "status",
     "memo",
