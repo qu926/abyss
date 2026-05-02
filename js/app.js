@@ -171,7 +171,8 @@ function migrateEventDates(events) {
     if (!event.event_date) return event;
     const autoOpenAt = getReservationOpenAt(event.event_date);
     const legacyOpenAt = getLegacyReservationOpenAt(event.event_date);
-    const shouldUpdateOpenAt = !event.reservation_open_at || event.reservation_open_at === legacyOpenAt;
+    const previousAutoOpenAt = getPreviousReservationOpenAt(event.event_date);
+    const shouldUpdateOpenAt = !event.reservation_open_at || [legacyOpenAt, previousAutoOpenAt].includes(event.reservation_open_at);
     return {
       ...event,
       reservation_open_at: shouldUpdateOpenAt ? autoOpenAt : event.reservation_open_at,
@@ -183,6 +184,14 @@ function getLegacyReservationOpenAt(eventDate) {
   const date = new Date(`${eventDate}T00:00:00`);
   const day = date.getDay();
   date.setDate(date.getDate() - day);
+  date.setHours(22, 0, 0, 0);
+  return toLocalDateTimeString(date);
+}
+
+function getPreviousReservationOpenAt(eventDate) {
+  const date = new Date(`${eventDate}T00:00:00`);
+  const day = date.getDay();
+  date.setDate(date.getDate() - day - 7);
   date.setHours(22, 0, 0, 0);
   return toLocalDateTimeString(date);
 }
@@ -633,7 +642,7 @@ function renderReservationOpenNotice(event, adminMode) {
   if (isReservationOpen(event)) {
     return `<div class="notice success">予約入力受付中です。解放日時: ${formatDateTime(event.reservation_open_at)}</div>`;
   }
-  return `<div class="notice muted">この日の予約入力は前週の日曜22:00から開始されます。現在は閲覧のみ可能です。解放日時: ${formatDateTime(event.reservation_open_at)}</div>`;
+  return `<div class="notice muted">この日の予約入力は直前の日曜22:00から開始されます。現在は閲覧のみ可能です。解放日時: ${formatDateTime(event.reservation_open_at)}</div>`;
 }
 
 function renderDrinkPlans(eventId, { locked = false } = {}) {

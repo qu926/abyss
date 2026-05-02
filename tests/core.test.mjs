@@ -111,9 +111,10 @@ test('date helpers and default events use local dates and Friday/Saturday event 
   assert.equal(todayString(date), '2026-05-02');
   assert.equal(toLocalDateTimeString(date), '2026-05-02T09:08');
   assert.equal(getReservationOpenAt('2026-05-03'), '2026-04-26T22:00');
-  assert.equal(getReservationOpenAt('2026-05-09'), '2026-04-26T22:00');
+  assert.equal(getReservationOpenAt('2026-05-08'), '2026-05-03T22:00');
+  assert.equal(getReservationOpenAt('2026-05-09'), '2026-05-03T22:00');
   assert.equal(getReservationOpenAt('2026-05-10'), '2026-05-03T22:00');
-  assert.equal(getReservationOpenAt('2026-05-16'), '2026-05-03T22:00');
+  assert.equal(getReservationOpenAt('2026-05-16'), '2026-05-10T22:00');
 
   const events = buildEventDates(new Date(2026, 4, 15, 12), 'stamp');
   assert.ok(events.length > 0);
