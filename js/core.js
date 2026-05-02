@@ -436,14 +436,14 @@ export function isValidSlot(timeSlot, seatType, groupNo) {
 
 export function getReservationsForEvent(state, eventId, includeDeleted = false) {
   return state.reservations.filter((reservation) => {
-    return reservation.event_date_id === eventId && (includeDeleted || !reservation.is_deleted);
+    return String(reservation.event_date_id) === String(eventId) && (includeDeleted || !reservation.is_deleted);
   });
 }
 
 export function findReservationBySlot(state, eventId, timeSlot, seatType, groupNo) {
   return state.reservations.find((reservation) => {
     return (
-      reservation.event_date_id === eventId &&
+      String(reservation.event_date_id) === String(eventId) &&
       reservation.time_slot === timeSlot &&
       reservation.seat_type === seatType &&
       String(reservation.group_no) === String(groupNo) &&
@@ -529,7 +529,7 @@ export function upsertReservation(state, input, options = {}) {
   if (errors.length) return { state, ok: false, errors, warnings: [] };
 
   const existingById = payload.id
-    ? draft.reservations.find((reservation) => reservation.id === payload.id && !reservation.is_deleted)
+    ? draft.reservations.find((reservation) => String(reservation.id) === String(payload.id) && !reservation.is_deleted)
     : null;
   const existingBySlot = findReservationBySlot(
     draft,

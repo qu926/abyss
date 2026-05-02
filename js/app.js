@@ -147,11 +147,21 @@ function migrateState(saved) {
 }
 
 function migrateReservations(reservations, events) {
+  const stamp = new Date().toISOString();
   return reservations.map((reservation) => {
-    if (!reservation.late_warning) return reservation;
-    const event = events.find((item) => item.id === reservation.event_date_id);
-    if (wasReservationChangedAfterEventCutoff(event, reservation)) return reservation;
-    return { ...reservation, late_warning: false };
+    const event = events.find((item) => String(item.id) === String(reservation.event_date_id));
+    const migrated = {
+      ...reservation,
+      id: reservation.id || createId("res"),
+      created_at: reservation.created_at || stamp,
+      updated_at: reservation.updated_at || reservation.created_at || stamp,
+      deleted_at: reservation.deleted_at || null,
+      is_deleted: Boolean(reservation.is_deleted),
+    };
+    if (migrated.late_warning && !wasReservationChangedAfterEventCutoff(event, migrated)) {
+      migrated.late_warning = false;
+    }
+    return migrated;
   });
 }
 
@@ -212,11 +222,13 @@ async function initializeSharedState() {
     const remoteState = await loadSharedState();
     if (remoteState) {
       state = migrateState(remoteState);
+      let shouldSaveMigratedState = hasPersistableMigration(remoteState, state);
       const result = archiveFinishedEvents(state);
       if (result.changed) {
         state = result.state;
-        await saveSharedState(state);
+        shouldSaveMigratedState = true;
       }
+      if (shouldSaveMigratedState) await saveSharedState(state);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       syncStatus = { mode: "supabase", text: "共有DBと同期済み" };
       render();
@@ -230,6 +242,12 @@ async function initializeSharedState() {
     syncStatus = { mode: "error", text: shortSyncError(error, "共有DBに接続できません") };
     render();
   }
+}
+
+function hasPersistableMigration(before, after) {
+  return ["event_dates", "reservations", "drink_plans"].some((key) => {
+    return JSON.stringify(before[key] || []) !== JSON.stringify(after[key] || []);
+  });
 }
 
 function shortSyncError(error, fallback) {
@@ -785,7 +803,7 @@ function renderReservationRow(reservation, context) {
   const warnings = reservation ? getReservationWarnings(state, reservation) : [];
   const rowClass = warnings.length ? "has-warning" : "";
   return `
-    <div class="grid-row slot-row ${rowClass}" data-reservation-id="${data.id || ""}" data-event-id="${context.eventId}" data-time-slot="${context.timeSlot}" data-seat-type="${context.seatType}" data-group-no="${context.groupNo}" role="row">
+    <div class="grid-row slot-row ${rowClass}" data-reservation-id="${escapeAttr(data.id || "")}" data-event-id="${escapeAttr(context.eventId)}" data-time-slot="${escapeAttr(context.timeSlot)}" data-seat-type="${escapeAttr(context.seatType)}" data-group-no="${escapeAttr(context.groupNo)}" role="row">
       <div class="grid-cell fixed" data-label="組数"><strong>${context.groupNo}</strong></div>
       <label class="grid-cell" data-label="担当ホスト">
         <select data-field="host_user_id" ${disabled}>
@@ -1983,7 +2001,8 @@ function saveReservationFromRow(button) {
 
 function deleteReservationFromRow(button) {
   const row = button.closest(".slot-row");
-  const reservationId = row.dataset.reservationId;
+  const reservation = findReservationBySlot(state, row.dataset.eventId, row.dataset.timeSlot, row.dataset.seatType, row.dataset.groupNo);
+  const reservationId = row.dataset.reservationId || reservation?.id || "";
   if (!reservationId) {
     showToast("削除する予約がありません。", "error");
     return;

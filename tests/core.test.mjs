@@ -527,6 +527,12 @@ test('reservation upsert opens only after the event gate, supports admin overrid
   assert.equal(getReservationsForEvent(deleted.state, event.id).length, 0);
   assert.equal(getReservationsForEvent(deleted.state, event.id, true).length, 1);
   assert.equal(getReservationsForEvent(deleted.state, event.id, true)[0].is_deleted, true);
+
+  const numericIdState = deepClone(updated.state);
+  numericIdState.reservations[0].id = 98765;
+  const deletedNumeric = deleteReservation(numericIdState, '98765', new Date('2026-05-02T12:00:00+09:00'));
+  assert.equal(deletedNumeric.ok, true);
+  assert.equal(getReservationsForEvent(deletedNumeric.state, event.id).length, 0);
 });
 
 test('reservation summaries enforce active seat and drink limits', () => {
