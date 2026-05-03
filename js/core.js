@@ -819,7 +819,7 @@ export function getReservationWarnings(state, reservation) {
       warnings.push("担当ホストが長期休暇中です");
     } else {
       const attendance = getAttendanceEntry(state, reservation.event_date_id, reservation.host_user_id);
-      if (!attendance) warnings.push("担当ホストが未入力です");
+      if (!attendance) warnings.push("担当ホストが勤怠未入力です");
       if (attendance?.status === "欠席") warnings.push("担当ホストが欠席です");
       if (attendance?.status === "未定") warnings.push("担当ホストが未定です");
     }
