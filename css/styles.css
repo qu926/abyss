@@ -1233,13 +1233,13 @@ textarea:focus {
   color: var(--muted);
 }
 
-.history-table code {
+.history-summary {
   display: block;
   max-width: 340px;
-  overflow: hidden;
   color: #d9e7ff;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .copy-text {

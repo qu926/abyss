@@ -1541,11 +1541,11 @@ function renderHistories() {
           <tbody>
             ${state.histories.map((history) => `
               <tr>
-                <td>${formatDateTime(history.changed_at)}</td>
-                <td>${escapeHtml(history.target_type)}</td>
+                <td>${formatHistoryDateTime(history.changed_at)}</td>
+                <td>${escapeHtml(formatHistoryTarget(history))}</td>
                 <td>${escapeHtml(history.change_note || "")}</td>
-                <td><code>${escapeHtml(summarizePayload(history.before_payload))}</code></td>
-                <td><code>${escapeHtml(summarizePayload(history.after_payload))}</code></td>
+                <td><span class="history-summary">${escapeHtml(summarizeHistoryPayload(history, history.before_payload))}</span></td>
+                <td><span class="history-summary">${escapeHtml(summarizeHistoryPayload(history, history.after_payload))}</span></td>
               </tr>
             `).join("") || `<tr><td colspan="5">履歴はまだありません。</td></tr>`}
           </tbody>
@@ -1553,6 +1553,32 @@ function renderHistories() {
       </div>
     </section>
   `;
+}
+
+function formatHistoryDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  const ms = String(date.getMilliseconds()).padStart(3, "0");
+  return `${y}/${m}/${d} ${hh}:${mm}:${ss}.${ms}`;
+}
+
+function formatHistoryTarget(history) {
+  if (history.target_type === "reservation") return "予約";
+  if (history.target_type === "attendance") return "ホスト勤怠";
+  if (history.target_type === "staff_attendance") return "内勤勤怠";
+  if (history.target_type === "drink_plan") return "事前予定";
+  if (history.target_type === "event") return "イベント日";
+  if (history.target_type === "user") return "ホスト";
+  if (history.target_type === "staff_member") return "内勤";
+  if (history.target_type === "long_vacation") return "長期休暇";
+  return history.target_type;
 }
 
 function renderDataTools() {
@@ -2223,6 +2249,35 @@ function resetData() {
   view.eventId = getDefaultEventId();
   showToast("初期データに戻しました。");
   render();
+}
+
+function summarizeHistoryPayload(history, payload) {
+  if (history?.target_type === "reservation") return summarizeReservationPayload(payload);
+  return summarizePayload(payload);
+}
+
+function summarizeReservationPayload(payload) {
+  if (!payload) return "-";
+  const event = findEvent(state, payload.event_date_id);
+  const slot = [event ? formatDateLabel(event.event_date) : "", getTimeSlotLabel(payload.time_slot), payload.seat_type, payload.group_no]
+    .filter(Boolean)
+    .join(" ");
+  const hostName = payload.host_user_id ? findUser(state, payload.host_user_id)?.display_name || payload.host_user_id : "未選択";
+  const drinks = [
+    payload.tower_count ? "タワー" : "",
+    payload.purple_count ? `P${payload.purple_count}` : "",
+    payload.red_count ? `R${payload.red_count}` : "",
+    payload.blue_count ? `B${payload.blue_count}` : "",
+    payload.green_count ? `G${payload.green_count}` : "",
+  ].filter(Boolean).join(" ");
+  return [
+    slot,
+    `担当: ${hostName}`,
+    formatReservationGuestMeta(payload),
+    drinks,
+    payload.memo ? `メモ: ${payload.memo}` : "",
+    payload.is_deleted ? "削除済み" : "",
+  ].filter(Boolean).join(" / ");
 }
 
 function summarizePayload(payload) {
