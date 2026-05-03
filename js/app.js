@@ -159,6 +159,11 @@ function migrateReservations(reservations, events) {
       updated_at: reservation.updated_at || reservation.created_at || stamp,
       deleted_at: reservation.deleted_at || null,
       is_deleted: Boolean(reservation.is_deleted),
+      ivan_attribute: ATTRIBUTES.includes(reservation.ivan_attribute)
+        ? reservation.ivan_attribute
+        : ATTRIBUTES.includes(reservation.attribute)
+          ? reservation.attribute
+          : "要確認",
     };
     if (migrated.late_warning && !wasReservationChangedAfterEventCutoff(event, migrated)) {
       migrated.late_warning = false;
@@ -832,9 +837,9 @@ function renderTowerScheduleItem(event) {
 function renderTowerReservationDetail(reservation) {
   const hostName = findUser(state, reservation.host_user_id)?.display_name || "未選択";
   const slot = `${getTimeSlotLabel(reservation.time_slot)} ${reservation.seat_type} ${reservation.group_no}`;
-  const guest = reservation.princess_name ? ` / ${reservation.princess_name}` : "";
+  const guest = formatReservationGuestMeta(reservation);
   const memo = reservation.memo ? ` / ${reservation.memo}` : "";
-  return `<li><span class="inline-pill active">実予約</span><strong>${escapeHtml(slot)}</strong><em>${escapeHtml(hostName)}${escapeHtml(guest)}${escapeHtml(memo)}</em></li>`;
+  return `<li><span class="inline-pill active">実予約</span><strong>${escapeHtml(slot)}</strong><em>${escapeHtml([hostName, guest].filter(Boolean).join(" / "))}${escapeHtml(memo)}</em></li>`;
 }
 
 function renderTowerPlanDetail(plan) {
@@ -849,6 +854,18 @@ function renderReservationGrid(eventId, { adminMode = false, locked = false } = 
   return TIME_SLOTS.map((timeSlot) => {
     return RESERVATION_SEAT_ORDER.map((seatType) => renderReservationSection(eventId, timeSlot, seatType, adminMode, locked)).join("");
   }).join("");
+}
+
+function formatReservationGuestMeta(reservation) {
+  return [
+    formatGuestAttribute("姫", reservation.princess_name, reservation.attribute),
+    formatGuestAttribute("アイバン", reservation.ivan_name, reservation.ivan_attribute),
+  ].filter(Boolean).join(" / ");
+}
+
+function formatGuestAttribute(label, name, attribute) {
+  if (!name) return "";
+  return `${label}: ${name}${attribute ? `（${attribute}）` : ""}`;
 }
 
 function renderReservationSection(eventId, timeSlot, seatType, adminMode, locked) {
@@ -869,7 +886,7 @@ function renderReservationSection(eventId, timeSlot, seatType, adminMode, locked
       </div>
       <div class="reservation-grid ${noIvanColumn ? "no-ivan-column" : ""}" role="table">
         <div class="grid-head" role="row">
-          <span>組数</span><span>担当ホスト</span><span>姫名</span>${noIvanColumn ? "" : "<span>アイバン名</span>"}<span>属性</span>
+          <span>組数</span><span>担当ホスト</span><span>姫名</span><span>属性</span>${noIvanColumn ? "" : "<span>アイバン名</span><span>属性</span>"}
           <span>P</span><span>R</span><span>B</span><span>G</span><span>タワー</span><span>メモ</span><span>操作</span>
         </div>
         ${rows}
@@ -886,6 +903,7 @@ function renderReservationRow(reservation, context) {
     princess_name: "",
     ivan_name: "",
     attribute: "リピ",
+    ivan_attribute: "リピ",
     purple_count: 0,
     red_count: 0,
     blue_count: 0,
@@ -905,12 +923,9 @@ function renderReservationRow(reservation, context) {
         </select>
       </label>
       ${textCell("princess_name", "姫名", data.princess_name, disabled)}
+      ${attributeCell("attribute", context.noIvanColumn ? "属性" : "姫属性", data.attribute, disabled)}
       ${context.noIvanColumn ? "" : textCell("ivan_name", "アイバン名", data.ivan_name, disabled)}
-      <label class="grid-cell" data-label="属性">
-        <select data-field="attribute" ${disabled}>
-          ${ATTRIBUTES.map((attribute) => option(attribute, attribute, attribute === data.attribute)).join("")}
-        </select>
-      </label>
+      ${context.noIvanColumn ? "" : attributeCell("ivan_attribute", "アイバン属性", data.ivan_attribute || data.attribute, disabled)}
       ${numberCell("purple_count", "P", data.purple_count, disabled)}
       ${numberCell("red_count", "R", data.red_count, disabled)}
       ${numberCell("blue_count", "B", data.blue_count, disabled)}
@@ -933,6 +948,16 @@ function renderReservationRow(reservation, context) {
 
 function textCell(field, label, value, disabled) {
   return `<label class="grid-cell" data-label="${label}"><input data-field="${field}" value="${escapeAttr(value || "")}" ${disabled}></label>`;
+}
+
+function attributeCell(field, label, value, disabled) {
+  return `
+    <label class="grid-cell" data-label="${label}">
+      <select data-field="${field}" ${disabled}>
+        ${ATTRIBUTES.map((attribute) => option(attribute, attribute, attribute === value)).join("")}
+      </select>
+    </label>
+  `;
 }
 
 function numberCell(field, label, value, disabled) {
@@ -1441,14 +1466,14 @@ function renderDeletedReservations(deletedReservations) {
       <h3>削除済み予約</h3>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>削除日時</th><th>枠</th><th>担当ホスト</th><th>姫名</th><th>メモ</th></tr></thead>
+          <thead><tr><th>削除日時</th><th>枠</th><th>担当ホスト</th><th>姫 / アイバン</th><th>メモ</th></tr></thead>
           <tbody>
             ${deletedReservations.map((reservation) => `
               <tr>
                 <td>${formatDateTime(reservation.deleted_at)}</td>
                 <td>${getTimeSlotLabel(reservation.time_slot)} ${reservation.seat_type} ${reservation.group_no}</td>
                 <td>${escapeHtml(findUser(state, reservation.host_user_id)?.display_name || "未選択")}</td>
-                <td>${escapeHtml(reservation.princess_name || "")}</td>
+                <td>${escapeHtml(formatReservationGuestMeta(reservation))}</td>
                 <td>${escapeHtml(reservation.memo || "")}</td>
               </tr>
             `).join("")}
@@ -1617,7 +1642,7 @@ function renderSeatDetail(slotKey) {
     ].filter(Boolean).join(" / ");
     return {
       title: `${groupNo} ${hostName}`,
-      meta: [reservation.princess_name, reservation.attribute, drinks, reservation.memo].filter(Boolean).join(" / "),
+      meta: [formatReservationGuestMeta(reservation), drinks, reservation.memo].filter(Boolean).join(" / "),
     };
   });
   const body = `
@@ -1637,7 +1662,7 @@ function renderDrinkDetail(drinkKey) {
       const hostName = findUser(state, reservation.host_user_id)?.display_name || "未選択";
       return {
         title: `実予約 ${count}本`,
-        meta: [`${getTimeSlotLabel(reservation.time_slot)} ${reservation.seat_type} ${reservation.group_no}`, hostName, reservation.princess_name, reservation.memo].filter(Boolean).join(" / "),
+        meta: [`${getTimeSlotLabel(reservation.time_slot)} ${reservation.seat_type} ${reservation.group_no}`, hostName, formatReservationGuestMeta(reservation), reservation.memo].filter(Boolean).join(" / "),
       };
     });
   const plans = getDrinkPlansForEvent(state, view.eventId)
@@ -2216,6 +2241,9 @@ function summarizePayload(payload) {
     "item_type",
     "count",
     "princess_name",
+    "attribute",
+    "ivan_name",
+    "ivan_attribute",
     "purple_count",
     "red_count",
     "blue_count",

@@ -524,6 +524,11 @@ export function normalizeReservation(input) {
     princess_name: (input.princess_name || "").trim(),
     ivan_name: (input.ivan_name || "").trim(),
     attribute: ATTRIBUTES.includes(input.attribute) ? input.attribute : "要確認",
+    ivan_attribute: ATTRIBUTES.includes(input.ivan_attribute)
+      ? input.ivan_attribute
+      : ATTRIBUTES.includes(input.attribute)
+        ? input.attribute
+        : "要確認",
     purple_count: toCount(input.purple_count),
     red_count: toCount(input.red_count),
     blue_count: toCount(input.blue_count),
@@ -726,7 +731,7 @@ export function getDrinkPlanTotals(state, eventId) {
 
 function isMeaningfulReservationChange(before, after) {
   if (!before) return true;
-  const keys = ["time_slot", "seat_type", "group_no", "host_user_id", "princess_name"];
+  const keys = ["time_slot", "seat_type", "group_no", "host_user_id", "princess_name", "attribute", "ivan_name", "ivan_attribute"];
   return keys.some((key) => String(before[key] || "") !== String(after[key] || ""));
 }
 

@@ -96,6 +96,7 @@ function reservationDraft(eventId, overrides = {}) {
     princess_name: 'Alice',
     ivan_name: '',
     attribute: ATTRIBUTES[0],
+    ivan_attribute: ATTRIBUTES[1],
     purple_count: 0,
     red_count: 0,
     blue_count: 0,
@@ -406,6 +407,7 @@ test('reservation normalization validates slots, trims guest names, clamps count
     princess_name: '  Alice  ',
     ivan_name: '  Bob  ',
     attribute: 'invalid-attribute',
+    ivan_attribute: ATTRIBUTES[3],
     purple_count: -1,
     red_count: '3',
     blue_count: 'not-a-number',
@@ -418,12 +420,23 @@ test('reservation normalization validates slots, trims guest names, clamps count
   assert.equal(normalized.princess_name, 'Alice');
   assert.equal(normalized.ivan_name, 'Bob');
   assert.equal(normalized.attribute, ATTRIBUTES[ATTRIBUTES.length - 1]);
+  assert.equal(normalized.ivan_attribute, ATTRIBUTES[3]);
   assert.equal(normalized.purple_count, 0);
   assert.equal(normalized.red_count, 3);
   assert.equal(normalized.blue_count, 0);
   assert.equal(normalized.green_count, 2);
   assert.equal(normalized.tower_count, 1);
   assert.equal(isReservationFilled(normalized), true);
+
+  const legacy = normalizeReservation({
+    event_date_id: 'ev_20260508',
+    time_slot: TIME_SLOTS[0],
+    seat_type: SEAT_TYPES[1],
+    group_no: 'A1',
+    attribute: ATTRIBUTES[2],
+  });
+  assert.equal(legacy.attribute, ATTRIBUTES[2]);
+  assert.equal(legacy.ivan_attribute, ATTRIBUTES[2]);
 
   assert.equal(
     isReservationFilled(
