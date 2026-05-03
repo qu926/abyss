@@ -38,6 +38,7 @@ import {
   getLimitStatus,
   getMissingUsers,
   getReservationOpenAt,
+  getReservationSaveConflict,
   getReservationWarnings,
   getReservationsForEvent,
   getRoles,
@@ -274,20 +275,28 @@ function shortSyncError(error, fallback) {
 }
 
 async function loadSharedState() {
+  return (await loadSharedRecord()).state;
+}
+
+async function loadSharedRecord() {
   const url = `${APP_CONFIG.supabaseUrl.replace(/\/$/, "")}/rest/v1/app_state?id=eq.${encodeURIComponent(
     APP_CONFIG.stateRowId || "host-event-manager",
-  )}&select=payload`;
+  )}&select=payload,updated_at`;
   const response = await fetch(url, {
     headers: getSupabaseHeaders(),
   });
   if (!response.ok) throw new Error(`Supabase load failed: ${response.status} ${await response.text()}`);
   const rows = await response.json();
   const payload = rows[0]?.payload;
-  return payload && Object.keys(payload).length ? payload : null;
+  return {
+    state: payload && Object.keys(payload).length ? payload : null,
+    updatedAt: rows[0]?.updated_at || "",
+  };
 }
 
-async function saveSharedState(nextState) {
+async function saveSharedState(nextState, options = {}) {
   if (syncStatus.mode !== "supabase") return;
+  if (options.expectedUpdatedAt) return saveSharedStateIfUnchanged(nextState, options.expectedUpdatedAt);
   const url = `${APP_CONFIG.supabaseUrl.replace(/\/$/, "")}/rest/v1/app_state`;
   const response = await fetch(url, {
     method: "POST",
@@ -303,6 +312,32 @@ async function saveSharedState(nextState) {
     }),
   });
   if (!response.ok) throw new Error(`Supabase save failed: ${response.status} ${await response.text()}`);
+}
+
+async function saveSharedStateIfUnchanged(nextState, expectedUpdatedAt) {
+  const rowId = APP_CONFIG.stateRowId || "host-event-manager";
+  const url = `${APP_CONFIG.supabaseUrl.replace(/\/$/, "")}/rest/v1/app_state?id=eq.${encodeURIComponent(
+    rowId,
+  )}&updated_at=eq.${encodeURIComponent(expectedUpdatedAt)}`;
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      ...getSupabaseHeaders(),
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify({
+      payload: nextState,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  if (!response.ok) throw new Error(`Supabase save failed: ${response.status} ${await response.text()}`);
+  const rows = await response.json();
+  if (!rows.length) {
+    const error = new Error("STALE_SHARED_STATE");
+    error.code = "STALE_SHARED_STATE";
+    throw error;
+  }
 }
 
 function getSupabaseHeaders() {
@@ -914,7 +949,7 @@ function renderReservationRow(reservation, context) {
   const warnings = reservation ? getReservationWarnings(state, reservation) : [];
   const rowClass = warnings.length ? "has-warning" : "";
   return `
-    <div class="grid-row slot-row ${rowClass}" data-reservation-id="${escapeAttr(data.id || "")}" data-event-id="${escapeAttr(context.eventId)}" data-time-slot="${escapeAttr(context.timeSlot)}" data-seat-type="${escapeAttr(context.seatType)}" data-group-no="${escapeAttr(context.groupNo)}" role="row">
+    <div class="grid-row slot-row ${rowClass}" data-reservation-id="${escapeAttr(data.id || "")}" data-reservation-updated-at="${escapeAttr(data.updated_at || "")}" data-event-id="${escapeAttr(context.eventId)}" data-time-slot="${escapeAttr(context.timeSlot)}" data-seat-type="${escapeAttr(context.seatType)}" data-group-no="${escapeAttr(context.groupNo)}" role="row">
       <div class="grid-cell fixed" data-label="組数"><strong>${context.groupNo}</strong></div>
       <label class="grid-cell" data-label="担当ホスト">
         <select data-field="host_user_id" ${disabled}>
@@ -938,7 +973,7 @@ function renderReservationRow(reservation, context) {
       </label>
       ${textCell("memo", "メモ", data.memo, disabled)}
       <div class="grid-cell actions" data-label="操作">
-        <button class="icon-button save" data-action="save-reservation" type="button" ${disabled}>保存</button>
+        <button class="icon-button save" data-action="save-reservation" type="button" ${disabled}>${data.id ? "更新" : "登録"}</button>
         <button class="icon-button danger" data-action="delete-reservation" type="button" ${disabled || !data.id ? "disabled" : ""}>削除</button>
       </div>
       ${warnings.length ? `<div class="row-warning">${warnings.map(escapeHtml).join(" / ")}</div>` : ""}
@@ -2143,12 +2178,81 @@ function handleChange(event) {
   }
 }
 
-function saveReservationFromRow(button) {
+async function saveReservationFromRow(button) {
   const row = button.closest(".slot-row");
   const payload = reservationPayloadFromRow(row);
   const adminMode = view.page === "admin";
-  const result = upsertReservation(state, payload, { admin: adminMode });
-  applyResult(result, result.warnings?.length ? `予約を保存しました。確認: ${result.warnings.join(" / ")}` : "予約を保存しました。");
+  button.disabled = true;
+  try {
+    if (syncStatus.mode === "supabase") {
+      const result = await saveReservationToSharedState(payload, adminMode);
+      if (!result.ok) {
+        showToast((result.errors || ["予約を保存できませんでした。"]).join(" / "), "error");
+        return;
+      }
+      state = result.state;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      syncStatus = { mode: "supabase", text: "共有DBと同期済み" };
+      showToast(result.warnings?.length ? `予約を保存しました。確認: ${result.warnings.join(" / ")}` : "予約を保存しました。");
+      render();
+      return;
+    }
+    const result = upsertReservation(state, payload, { admin: adminMode, strictDuplicate: true });
+    applyResult(result, result.warnings?.length ? `予約を保存しました。確認: ${result.warnings.join(" / ")}` : "予約を保存しました。");
+  } catch (error) {
+    console.error(error);
+    syncStatus = { mode: "error", text: shortSyncError(error, "共有DBへの保存に失敗") };
+    showToast("共有DBへの保存に失敗しました。再読み込みして確認してください。", "error");
+    render();
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveReservationToSharedState(payload, adminMode) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const record = await loadSharedRecord();
+    const latestState = record.state ? migrateState(record.state) : state;
+    const conflict = getReservationSaveConflict(latestState, payload);
+    if (conflict) {
+      state = latestState;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      render();
+      return {
+        ok: false,
+        state: latestState,
+        errors: [formatReservationConflictMessage(conflict)],
+      };
+    }
+    const result = upsertReservation(latestState, payload, { admin: adminMode, strictDuplicate: true });
+    if (!result.ok) return result;
+    try {
+      await saveSharedState(result.state, { expectedUpdatedAt: record.updatedAt });
+      return result;
+    } catch (error) {
+      if (error.code === "STALE_SHARED_STATE") continue;
+      throw error;
+    }
+  }
+  const record = await loadSharedRecord();
+  const latestState = record.state ? migrateState(record.state) : state;
+  state = latestState;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  render();
+  return {
+    ok: false,
+    state: latestState,
+    errors: ["他の端末で先に更新されました。最新状態を読み込みました。もう一度確認してください。"],
+  };
+}
+
+function formatReservationConflictMessage(conflict) {
+  const reservation = conflict.reservation;
+  const summary = summarizeReservationPayload(reservation);
+  if (conflict.type === "stale") {
+    return `この予約は他の端末で先に変更されています。最新状態を読み込みました: ${summary}`;
+  }
+  return `この枠は既に登録されています。最新状態を読み込みました: ${summary}`;
 }
 
 function deleteReservationFromRow(button) {
@@ -2186,7 +2290,10 @@ function reservationPayloadFromRow(row) {
   row.querySelectorAll("[data-field]").forEach((field) => {
     payload[field.dataset.field] = field.value;
   });
-  return normalizeReservation(payload);
+  return {
+    ...normalizeReservation(payload),
+    base_updated_at: row.dataset.reservationUpdatedAt || "",
+  };
 }
 
 function saveAdminAttendance(button) {

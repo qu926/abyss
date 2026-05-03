@@ -559,6 +559,26 @@ export function isReservationFilled(reservation) {
   );
 }
 
+export function getReservationSaveConflict(state, input) {
+  const payload = normalizeReservation(input);
+  const existing = findReservationBySlot(
+    state,
+    payload.event_date_id,
+    payload.time_slot,
+    payload.seat_type,
+    payload.group_no,
+  );
+  if (!existing || !isReservationFilled(existing)) return null;
+  if (!payload.id || String(existing.id) !== String(payload.id)) {
+    return { type: "occupied", reservation: existing };
+  }
+  const baseUpdatedAt = input.base_updated_at || "";
+  if (baseUpdatedAt && existing.updated_at && String(existing.updated_at) !== String(baseUpdatedAt)) {
+    return { type: "stale", reservation: existing };
+  }
+  return null;
+}
+
 export function isReservationOpen(event, now = new Date()) {
   if (!event || event.status === "休み") return false;
   return new Date(now).getTime() >= new Date(event.reservation_open_at).getTime();
@@ -606,17 +626,18 @@ export function upsertReservation(state, input, options = {}) {
   );
   const existing = existingById || existingBySlot;
   const before = existing ? clone(existing) : null;
+  const reservationId = existing?.id || payload.id || createId("res");
   const lateWarning = isAfterEventCutoff(event, now) && isMeaningfulReservationChange(before, payload);
   const existingLateWarning = wasReservationChangedAfterEventCutoff(event, existing);
   const after = {
     ...(existing || {
-      id: createId("res"),
       event_date_id: payload.event_date_id,
       created_at: stamp,
       deleted_at: null,
       is_deleted: false,
     }),
     ...payload,
+    id: reservationId,
     late_warning: Boolean(lateWarning || existingLateWarning),
     updated_at: stamp,
   };

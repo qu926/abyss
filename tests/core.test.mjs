@@ -31,6 +31,7 @@ import {
   getMissingStaffMembers,
   getMissingUsers,
   getReservationOpenAt,
+  getReservationSaveConflict,
   getReservationWarnings,
   getReservationsForEvent,
   getRoles,
@@ -450,6 +451,51 @@ test('reservation normalization validates slots, trims guest names, clamps count
     false,
   );
   assert.equal(normalizeAttendance({ event_date_id: 'ev', user_id: 'u', status: 'bad' }).status, ATTENDANCE_STATUSES[2]);
+});
+
+test('reservation save conflicts protect occupied slots and stale edits', () => {
+  let state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const event = activeEvent(state);
+  const created = upsertReservation(
+    state,
+    reservationDraft(event.id, {
+      group_no: '5',
+      host_user_id: 'u_seto',
+      princess_name: 'Seto first',
+    }),
+    { admin: true, now: '2026-05-03T13:22:14.748Z', strictDuplicate: true },
+  );
+  assert.equal(created.ok, true);
+  state = created.state;
+
+  const occupiedConflict = getReservationSaveConflict(
+    state,
+    reservationDraft(event.id, {
+      group_no: '5',
+      host_user_id: 'u_usui',
+      princess_name: 'Usui stale screen',
+    }),
+  );
+  assert.equal(occupiedConflict.type, 'occupied');
+  assert.equal(occupiedConflict.reservation.host_user_id, 'u_seto');
+
+  const currentEdit = reservationDraft(event.id, {
+    id: created.reservation.id,
+    group_no: '5',
+    host_user_id: 'u_seto',
+    princess_name: 'Seto edited',
+    base_updated_at: created.reservation.updated_at,
+  });
+  assert.equal(getReservationSaveConflict(state, currentEdit), null);
+
+  state.reservations[0].memo = 'changed elsewhere';
+  state.reservations[0].updated_at = '2026-05-03T13:23:15.271Z';
+  const staleEditConflict = getReservationSaveConflict(state, currentEdit);
+  assert.equal(staleEditConflict.type, 'stale');
+
+  const deleted = deleteReservation(state, created.reservation.id, '2026-05-03T13:24:00.000Z');
+  assert.equal(deleted.ok, true);
+  assert.equal(getReservationSaveConflict(deleted.state, occupiedConflict.reservation), null);
 });
 
 test('drink plans can be entered before reservation open and are tracked separately from actual drink totals', () => {
