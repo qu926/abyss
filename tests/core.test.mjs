@@ -590,14 +590,14 @@ test('reservation request prototype supports instance capacity, flexible request
   assert.equal(getReservationRequestsForEvent(state, event.id).length, 12);
 });
 
-test('reservation request acceptance closes at total instance capacity for hosts', () => {
+test('reservation request acceptance closes after five hold slots for hosts', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
   const setting = upsertReservationSetting(state, { event_date_id: event.id, instance_count: 2 }, '2026-05-03T12:00:00.000Z');
   assert.equal(setting.ok, true);
   state = setting.state;
 
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < 45; i += 1) {
     const created = upsertReservationRequest(
       state,
       reservationRequestDraft(event.id, {
@@ -612,8 +612,11 @@ test('reservation request acceptance closes at total instance capacity for hosts
   }
 
   assert.deepEqual(getReservationRequestAcceptanceStatus(state, event.id), {
-    total: 40,
-    capacity: 40,
+    total: 45,
+    reservationCapacity: 40,
+    holdCapacity: 5,
+    holdUsed: 5,
+    capacity: 45,
     remaining: 0,
     closed: true,
   });

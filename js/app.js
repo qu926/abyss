@@ -792,7 +792,7 @@ function renderReservationRequestPrototype(eventId, { adminMode = false, locked 
         <span class="capacity ${acceptance.closed ? "full" : "ok"}">${setting.instance_count}インスタンス / 合計 ${acceptance.total} / ${acceptance.capacity}</span>
       </div>
       <p class="plan-note">ホストは席を選ばず、受付順に予約を登録します。運営があとから予約枠・保留枠・インスタンスへ振り分けるための仮画面です。</p>
-      ${acceptance.closed ? `<div class="notice muted">受付上限 ${acceptance.capacity}件に達しています。ホスト側の新規受付は締切です。</div>` : ""}
+      ${acceptance.closed ? `<div class="notice muted">受付上限 ${acceptance.capacity}件（予約枠${acceptance.reservationCapacity} + 保留枠${acceptance.holdCapacity}）に達しています。ホスト側の新規受付は締切です。</div>` : ""}
       ${adminMode ? renderReservationRequestSettingForm(eventId, setting) : ""}
       ${renderReservationRequestForm(eventId, setting, requestLocked)}
       ${renderReservationRequestSummary(buckets, setting, acceptance)}
@@ -859,8 +859,14 @@ function renderReservationRequestSummary(buckets, setting, acceptance) {
       <div class="mini-panel">
         <span>受付合計</span>
         <strong>${acceptance.total} / ${acceptance.capacity}</strong>
-        <em>${acceptance.closed ? "受付締切" : `残り${acceptance.remaining}`}</em>
+        <em>予約枠${acceptance.reservationCapacity} + 保留${acceptance.holdCapacity}</em>
         <span class="capacity ${acceptance.closed ? "full" : "ok"}">${acceptance.closed ? "締切" : "受付中"}</span>
+      </div>
+      <div class="mini-panel">
+        <span>保留枠</span>
+        <strong>${acceptance.holdUsed} / ${acceptance.holdCapacity}</strong>
+        <em>${acceptance.holdUsed ? "予約枠超過分" : "まだ予約枠内"}</em>
+        <span class="capacity ${acceptance.holdUsed >= acceptance.holdCapacity ? "full" : "ok"}">${acceptance.holdUsed >= acceptance.holdCapacity ? "満枠" : `残り${acceptance.holdCapacity - acceptance.holdUsed}`}</span>
       </div>
       ${TIME_SLOTS.map((slot) => {
         const bucket = buckets[slot];

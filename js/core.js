@@ -32,6 +32,7 @@ export const DRINK_LIMITS = {
   green: { label: "グリーン", limit: 10 },
 };
 export const DRINK_PLAN_TYPES = Object.entries(DRINK_LIMITS).map(([key, value]) => ({ key, label: value.label }));
+export const RESERVATION_REQUEST_HOLD_LIMIT = 5;
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const STORAGE_VERSION = 1;
@@ -703,9 +704,15 @@ export function getReservationRequestTotalCapacity(state, eventId) {
 
 export function getReservationRequestAcceptanceStatus(state, eventId) {
   const total = getReservationRequestsForEvent(state, eventId).length;
-  const capacity = getReservationRequestTotalCapacity(state, eventId);
+  const reservationCapacity = getReservationRequestTotalCapacity(state, eventId);
+  const holdCapacity = RESERVATION_REQUEST_HOLD_LIMIT;
+  const capacity = reservationCapacity + holdCapacity;
+  const holdUsed = Math.max(0, total - reservationCapacity);
   return {
     total,
+    reservationCapacity,
+    holdCapacity,
+    holdUsed,
     capacity,
     remaining: Math.max(0, capacity - total),
     closed: capacity > 0 && total >= capacity,
