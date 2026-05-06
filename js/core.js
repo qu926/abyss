@@ -145,6 +145,14 @@ export function getReservationOpenAt(eventDate) {
   return toLocalDateTimeString(date);
 }
 
+export function getReservationRequestOpenAt(eventDate) {
+  const date = toDate(eventDate);
+  const daysSinceWednesday = (date.getDay() - 3 + 7) % 7;
+  date.setDate(date.getDate() - daysSinceWednesday);
+  date.setHours(22, 0, 0, 0);
+  return toLocalDateTimeString(date);
+}
+
 export function toLocalDateTimeString(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -595,6 +603,11 @@ export function isReservationOpen(event, now = new Date()) {
   return new Date(now).getTime() >= new Date(event.reservation_open_at).getTime();
 }
 
+export function isReservationRequestOpen(event, now = new Date()) {
+  if (!event || event.status === EVENT_STATUSES[2]) return false;
+  return new Date(now).getTime() >= new Date(getReservationRequestOpenAt(event.event_date)).getTime();
+}
+
 export function isAfterEventCutoff(event, now = new Date()) {
   if (!event) return false;
   const current = new Date(now);
@@ -810,7 +823,7 @@ export function upsertReservationRequest(state, input, options = {}) {
   const errors = [];
   if (!event) errors.push("イベント日が見つかりません。");
   if (event && event.status === "休み") errors.push("休み日は予約受付対象外です。");
-  if (event && !options.admin && !isReservationOpen(event, new Date(stamp))) {
+  if (event && !options.admin && !isReservationRequestOpen(event, new Date(stamp))) {
     errors.push("この日の予約入力は解放前です。");
   }
   const existing = payload.id ? draft.reservation_requests.find((request) => String(request.id) === String(payload.id) && !request.is_deleted) : null;

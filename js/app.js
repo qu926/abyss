@@ -41,6 +41,7 @@ import {
   getLimitStatus,
   getMissingUsers,
   getReservationOpenAt,
+  getReservationRequestOpenAt,
   getReservationRequestBuckets,
   getReservationRequestAcceptanceStatus,
   getReservationRequestCapacity,
@@ -61,6 +62,7 @@ import {
   isReservationFilled,
   isOnVacation,
   isReservationOpen,
+  isReservationRequestOpen,
   mergeSharedState,
   normalizeReservation,
   setReservationRequestPlacement,
@@ -726,7 +728,8 @@ function getCombinedAttendanceListItems(status) {
 
 function renderReservationPage(adminMode) {
   const event = findEvent(state, view.eventId);
-  const locked = event && !adminMode && !isReservationOpen(event);
+  const gridLocked = event && !adminMode && !isReservationOpen(event);
+  const requestLocked = event && !adminMode && !isReservationRequestOpen(event);
   const isHoliday = event?.status === "休み";
   return `
     <section class="panel page-panel">
@@ -748,14 +751,14 @@ function renderReservationPage(adminMode) {
         </div>
       </div>
       ${view.reservationTab === "towers" ? renderTowerScheduleOverview() : view.reservationTab === "requests" ? `
-        ${renderReservationOpenNotice(event, adminMode)}
+        ${renderReservationRequestOpenNotice(event, adminMode)}
         ${isHoliday ? `<div class="notice muted">この日は休みです。勤怠・予約入力対象外です。</div>` : ""}
-        ${renderReservationRequestPrototype(event?.id || "", { adminMode, locked: Boolean(locked || isHoliday) })}
+        ${renderReservationRequestPrototype(event?.id || "", { adminMode, locked: Boolean(requestLocked || isHoliday) })}
       ` : `
         ${renderReservationOpenNotice(event, adminMode)}
         ${isHoliday ? `<div class="notice muted">この日は休みです。勤怠・予約入力対象外です。</div>` : ""}
         ${renderDrinkPlans(event?.id || "", { locked: Boolean(isHoliday || (event && isEventArchived(event))) })}
-        ${renderReservationGrid(view.eventId, { adminMode, locked: Boolean(locked || isHoliday) })}
+        ${renderReservationGrid(view.eventId, { adminMode, locked: Boolean(gridLocked || isHoliday) })}
       `}
     </section>
   `;
@@ -775,6 +778,19 @@ function renderReservationOpenNotice(event, adminMode) {
     return `<div class="notice success">予約入力受付中です。解放日時: ${formatDateTime(event.reservation_open_at)}</div>`;
   }
   return `<div class="notice muted">この日の予約入力は直前の日曜22:00から開始されます。現在は閲覧のみ可能です。解放日時: ${formatDateTime(event.reservation_open_at)}</div>`;
+}
+
+function renderReservationRequestOpenNotice(event, adminMode) {
+  if (!event) return "";
+  if (event.status === EVENT_STATUSES[2]) return "";
+  const requestOpenAt = getReservationRequestOpenAt(event.event_date);
+  if (adminMode) {
+    return `<div class="notice">運営画面では受付方式（仮）の解放前でも代理入力できます。受付方式解放: ${formatDateTime(requestOpenAt)}</div>`;
+  }
+  if (isReservationRequestOpen(event)) {
+    return `<div class="notice success">受付方式（仮）は受付中です。解放日時: ${formatDateTime(requestOpenAt)}</div>`;
+  }
+  return `<div class="notice muted">受付方式（仮）は対象週の水曜22:00から開始されます。現在は閲覧のみ可能です。解放日時: ${formatDateTime(requestOpenAt)}</div>`;
 }
 
 function renderReservationRequestPrototype(eventId, { adminMode = false, locked = false } = {}) {

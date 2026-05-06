@@ -32,6 +32,7 @@ import {
   getMissingStaffMembers,
   getMissingUsers,
   getReservationOpenAt,
+  getReservationRequestOpenAt,
   getReservationRequestAcceptanceStatus,
   getReservationRequestBuckets,
   getReservationRequestCapacity,
@@ -53,6 +54,7 @@ import {
   isOnVacation,
   isReservationFilled,
   isReservationOpen,
+  isReservationRequestOpen,
   isValidSlot,
   mergeSharedState,
   normalizeAttendance,
@@ -146,6 +148,9 @@ test('date helpers and default events use local dates and Friday/Saturday event 
   assert.equal(getReservationOpenAt('2026-05-09'), '2026-05-03T22:00');
   assert.equal(getReservationOpenAt('2026-05-10'), '2026-05-03T22:00');
   assert.equal(getReservationOpenAt('2026-05-16'), '2026-05-10T22:00');
+  assert.equal(getReservationRequestOpenAt('2026-05-08'), '2026-05-06T22:00');
+  assert.equal(getReservationRequestOpenAt('2026-05-09'), '2026-05-06T22:00');
+  assert.equal(getReservationRequestOpenAt('2026-05-10'), '2026-05-06T22:00');
 
   const events = buildEventDates(new Date(2026, 4, 15, 12), 'stamp');
   assert.ok(events.length > 0);
@@ -637,6 +642,29 @@ test('reservation request acceptance closes after five hold slots for hosts', ()
   assert.equal(adminAttempt.ok, true);
 });
 
+test('reservation request prototype opens on Wednesday at 22:00 for hosts', () => {
+  let state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const event = state.event_dates.find((item) => item.event_date === '2026-05-08');
+  assert.equal(event.reservation_open_at, '2026-05-03T22:00');
+  assert.equal(getReservationRequestOpenAt(event.event_date), '2026-05-06T22:00');
+
+  const beforeRequestOpen = upsertReservationRequest(
+    state,
+    reservationRequestDraft(event.id, { princess_name: 'Before request open' }),
+    { admin: false, now: '2026-05-06T21:59:59.999' },
+  );
+  assert.equal(beforeRequestOpen.ok, false);
+
+  const atRequestOpen = upsertReservationRequest(
+    state,
+    reservationRequestDraft(event.id, { princess_name: 'At request open' }),
+    { admin: false, now: '2026-05-06T22:00:00.000' },
+  );
+  assert.equal(atRequestOpen.ok, true);
+  state = atRequestOpen.state;
+  assert.equal(getReservationRequestsForEvent(state, event.id).length, 1);
+});
+
 test('drink plans can be entered before reservation open and are tracked separately from actual drink totals', () => {
   const state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
@@ -839,6 +867,12 @@ test('reservation open and same-day cutoff boundaries are deterministic', () => 
 
   assert.equal(isReservationOpen(event, beforeOpen), false);
   assert.equal(isReservationOpen(event, atOpen), true);
+
+  const requestOpenAt = new Date(getReservationRequestOpenAt(event.event_date));
+  const beforeRequestOpen = new Date(requestOpenAt);
+  beforeRequestOpen.setMilliseconds(beforeRequestOpen.getMilliseconds() - 1);
+  assert.equal(isReservationRequestOpen(event, beforeRequestOpen), false);
+  assert.equal(isReservationRequestOpen(event, requestOpenAt), true);
 
   assert.equal(isAfterEventCutoff(event, new Date(`${event.event_date}T16:59:00`)), false);
   assert.equal(isAfterEventCutoff(event, new Date(`${event.event_date}T17:01:00`)), true);
