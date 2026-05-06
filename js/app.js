@@ -802,6 +802,10 @@ function renderReservationRequestSettingForm(eventId, setting) {
   return `
     <form class="request-setting-form" data-action="save-reservation-request-setting">
       <input type="hidden" name="event_date_id" value="${escapeAttr(eventId)}">
+      <div class="request-setting-copy">
+        <strong>運営用: インスタンス数設定</strong>
+        <span>2インスタンスにする場合はここで切り替えます。2にすると前半/後半20件ずつ、どちらでも可が使えます。</span>
+      </div>
       <label>
         <span>インスタンス数</span>
         <select name="instance_count">
@@ -819,20 +823,28 @@ function renderReservationRequestForm(eventId, setting, locked) {
   return `
     <form class="reservation-request-form" data-action="save-reservation-request">
       <input type="hidden" name="event_date_id" value="${escapeAttr(eventId)}">
-      <label><span>担当ホスト</span><select name="host_user_id" ${locked ? "disabled" : ""}><option value="">未選択</option>${getActiveUsers(state).map((user) => option(user.id, user.display_name, false)).join("")}</select></label>
-      <label><span>希望回</span><select name="desired_time_slot" ${locked ? "disabled" : ""}>${allowedSlots.map((slot) => option(slot, REQUEST_TIME_SLOT_LABELS[slot] || slot, false)).join("")}</select></label>
-      <label class="checkbox-label"><input name="no_same_time_double_booking" type="checkbox" ${locked ? "disabled" : ""}><span>同タイム2枠不可</span></label>
-      <label><span>姫名</span><input name="princess_name" ${locked ? "disabled" : ""}></label>
-      <label><span>属性</span><select name="attribute" ${locked ? "disabled" : ""}>${ATTRIBUTES.map((attribute) => option(attribute, attribute, attribute === "リピ")).join("")}</select></label>
-      <label><span>アイバン名</span><input name="ivan_name" ${locked ? "disabled" : ""}></label>
-      <label><span>アイバン属性</span><select name="ivan_attribute" ${locked ? "disabled" : ""}>${ATTRIBUTES.map((attribute) => option(attribute, attribute, attribute === "リピ")).join("")}</select></label>
-      <label><span>P</span><input name="purple_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
-      <label><span>R</span><input name="red_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
-      <label><span>B</span><input name="blue_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
-      <label><span>G</span><input name="green_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
-      <label><span>タワー</span><select name="tower_count" ${locked ? "disabled" : ""}>${option("0", "なし", true)}${option("1", "あり", false)}</select></label>
-      <label class="span-2"><span>メモ</span><input name="memo" placeholder="確認事項、交渉メモなど" ${locked ? "disabled" : ""}></label>
-      <button class="primary-button" type="submit" ${locked ? "disabled" : ""}>受付に登録</button>
+      <div class="request-form-row request-host-row">
+        <label><span>担当ホスト</span><select name="host_user_id" ${locked ? "disabled" : ""}><option value="">未選択</option>${getActiveUsers(state).map((user) => option(user.id, user.display_name, false)).join("")}</select></label>
+        <label><span>希望回</span><select name="desired_time_slot" ${locked ? "disabled" : ""}>${allowedSlots.map((slot) => option(slot, REQUEST_TIME_SLOT_LABELS[slot] || slot, false)).join("")}</select></label>
+        <label class="checkbox-label"><input name="no_same_time_double_booking" type="checkbox" ${locked ? "disabled" : ""}><span>同タイム2枠不可</span></label>
+      </div>
+      <div class="request-form-row request-guest-row">
+        <label><span>姫名</span><input name="princess_name" ${locked ? "disabled" : ""}></label>
+        <label><span>属性</span><select name="attribute" ${locked ? "disabled" : ""}>${ATTRIBUTES.map((attribute) => option(attribute, attribute, attribute === "リピ")).join("")}</select></label>
+        <label><span>アイバン名</span><input name="ivan_name" ${locked ? "disabled" : ""}></label>
+        <label><span>アイバン属性</span><select name="ivan_attribute" ${locked ? "disabled" : ""}>${ATTRIBUTES.map((attribute) => option(attribute, attribute, attribute === "リピ")).join("")}</select></label>
+      </div>
+      <div class="request-form-row request-drink-row">
+        <label><span>P</span><input name="purple_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
+        <label><span>R</span><input name="red_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
+        <label><span>B</span><input name="blue_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
+        <label><span>G</span><input name="green_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
+        <label><span>タワー</span><select name="tower_count" ${locked ? "disabled" : ""}>${option("0", "なし", true)}${option("1", "あり", false)}</select></label>
+      </div>
+      <div class="request-form-row request-submit-row">
+        <label><span>メモ</span><input name="memo" placeholder="確認事項、交渉メモなど" ${locked ? "disabled" : ""}></label>
+        <button class="primary-button" type="submit" ${locked ? "disabled" : ""}>受付に登録</button>
+      </div>
     </form>
   `;
 }

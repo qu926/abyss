@@ -1202,7 +1202,6 @@ textarea:focus {
 .request-setting-form,
 .reservation-request-form {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1211,7 +1210,51 @@ textarea:focus {
 }
 
 .request-setting-form {
-  grid-template-columns: minmax(240px, 1fr) auto;
+  grid-template-columns: minmax(260px, 1.4fr) minmax(240px, 1fr) auto;
+  align-items: end;
+}
+
+.reservation-request-form {
+  grid-template-columns: 1fr;
+}
+
+.request-setting-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.request-setting-copy strong {
+  color: var(--gold);
+  font-size: 14px;
+}
+
+.request-setting-copy span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.request-form-row {
+  display: grid;
+  gap: 12px;
+}
+
+.request-host-row {
+  grid-template-columns: minmax(220px, 1.5fr) minmax(170px, 0.85fr) minmax(170px, 0.85fr);
+}
+
+.request-guest-row {
+  grid-template-columns: minmax(180px, 1.3fr) minmax(120px, 0.75fr) minmax(180px, 1.3fr) minmax(120px, 0.75fr);
+}
+
+.request-drink-row {
+  grid-template-columns: repeat(5, minmax(90px, 1fr));
+}
+
+.request-submit-row {
+  grid-template-columns: minmax(260px, 1fr) auto;
+  align-items: end;
 }
 
 .checkbox-label {
@@ -1462,6 +1505,7 @@ textarea:focus {
   .drink-plan-form,
   .request-setting-form,
   .reservation-request-form,
+  .request-form-row,
   .request-summary-grid,
   .request-bucket-grid,
   .role-form,
