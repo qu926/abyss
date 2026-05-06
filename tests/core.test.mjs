@@ -5,6 +5,7 @@ import {
   ATTRIBUTES,
   DRINK_LIMITS,
   EVENT_STATUSES,
+  REQUEST_TIME_SLOTS,
   RESERVATION_SEAT_ORDER,
   SEAT_TYPES,
   STAFF_ATTENDANCE_STATUSES,
@@ -31,6 +32,10 @@ import {
   getMissingStaffMembers,
   getMissingUsers,
   getReservationOpenAt,
+  getReservationRequestBuckets,
+  getReservationRequestCapacity,
+  getReservationRequestsForEvent,
+  getReservationSetting,
   getReservationSaveConflict,
   getReservationWarnings,
   getReservationsForEvent,
@@ -54,12 +59,15 @@ import {
   normalizeReservation,
   todayString,
   setRoleActive,
+  setReservationRequestPlacement,
   setStaffMemberActive,
   setUserActive,
   toLocalDateTimeString,
   upsertAttendance,
   upsertDrinkPlan,
   upsertReservation,
+  upsertReservationRequest,
+  upsertReservationSetting,
   upsertRole,
   upsertStaffAttendance,
   upsertStaffMember,
@@ -97,6 +105,26 @@ function reservationDraft(eventId, overrides = {}) {
     princess_name: 'Alice',
     ivan_name: '',
     attribute: ATTRIBUTES[0],
+    ivan_attribute: ATTRIBUTES[1],
+    purple_count: 0,
+    red_count: 0,
+    blue_count: 0,
+    green_count: 0,
+    tower_count: 0,
+    memo: '',
+    ...overrides,
+  };
+}
+
+function reservationRequestDraft(eventId, overrides = {}) {
+  return {
+    event_date_id: eventId,
+    host_user_id: 'u_kai',
+    desired_time_slot: TIME_SLOTS[0],
+    no_same_time_double_booking: false,
+    princess_name: 'Alice',
+    attribute: ATTRIBUTES[0],
+    ivan_name: '',
     ivan_attribute: ATTRIBUTES[1],
     purple_count: 0,
     red_count: 0,
@@ -496,6 +524,69 @@ test('reservation save conflicts protect occupied slots and stale edits', () => 
   const deleted = deleteReservation(state, created.reservation.id, '2026-05-03T13:24:00.000Z');
   assert.equal(deleted.ok, true);
   assert.equal(getReservationSaveConflict(deleted.state, occupiedConflict.reservation), null);
+});
+
+test('reservation request prototype supports instance capacity, flexible requests, and manual holds', () => {
+  let state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const event = activeEvent(state);
+
+  assert.equal(getReservationSetting(state, event.id).instance_count, 1);
+  assert.equal(getReservationRequestCapacity(state, event.id, TIME_SLOTS[0]), 10);
+  const flexibleOnOneInstance = upsertReservationRequest(
+    state,
+    reservationRequestDraft(event.id, { desired_time_slot: REQUEST_TIME_SLOTS[2] }),
+    { admin: true, now: '2026-05-03T13:00:00.000Z' },
+  );
+  assert.equal(flexibleOnOneInstance.ok, true);
+  assert.equal(flexibleOnOneInstance.request.desired_time_slot, TIME_SLOTS[0]);
+
+  state = buildDefaultState(new Date(2026, 4, 15, 12));
+  for (let i = 0; i < 11; i += 1) {
+    const created = upsertReservationRequest(
+      state,
+      reservationRequestDraft(event.id, {
+        host_user_id: i % 2 ? 'u_daito' : 'u_kai',
+        princess_name: `Guest ${i + 1}`,
+      }),
+      { admin: true, now: `2026-05-03T13:${String(i).padStart(2, '0')}:00.000Z` },
+    );
+    assert.equal(created.ok, true);
+    state = created.state;
+  }
+
+  let buckets = getReservationRequestBuckets(state, event.id);
+  assert.equal(buckets[TIME_SLOTS[0]].reserved.length, 10);
+  assert.equal(buckets[TIME_SLOTS[0]].hold.length, 1);
+
+  const first = buckets[TIME_SLOTS[0]].reserved[0];
+  const held = setReservationRequestPlacement(state, first.id, 'hold', '2026-05-03T13:20:00.000Z');
+  assert.equal(held.ok, true);
+  state = held.state;
+  buckets = getReservationRequestBuckets(state, event.id);
+  assert.equal(buckets[TIME_SLOTS[0]].reserved.some((request) => request.princess_name === 'Guest 11'), true);
+  assert.equal(buckets[TIME_SLOTS[0]].hold.some((request) => request.id === first.id), true);
+
+  const setting = upsertReservationSetting(state, { event_date_id: event.id, instance_count: 2 }, '2026-05-03T13:30:00.000Z');
+  assert.equal(setting.ok, true);
+  state = setting.state;
+  assert.equal(getReservationSetting(state, event.id).instance_count, 2);
+  assert.equal(getReservationRequestCapacity(state, event.id, TIME_SLOTS[1]), 20);
+
+  const flexible = upsertReservationRequest(
+    state,
+    reservationRequestDraft(event.id, {
+      desired_time_slot: REQUEST_TIME_SLOTS[2],
+      princess_name: 'Flexible Guest',
+      no_same_time_double_booking: true,
+    }),
+    { admin: true, now: '2026-05-03T13:31:00.000Z' },
+  );
+  assert.equal(flexible.ok, true);
+  state = flexible.state;
+  buckets = getReservationRequestBuckets(state, event.id);
+  assert.equal(buckets.flexible.length, 1);
+  assert.equal(buckets.flexible[0].no_same_time_double_booking, true);
+  assert.equal(getReservationRequestsForEvent(state, event.id).length, 12);
 });
 
 test('drink plans can be entered before reservation open and are tracked separately from actual drink totals', () => {

@@ -4,6 +4,12 @@ export const STAFF_ATTENDANCE_STATUSES = ["出勤", "欠席", "未定"];
 export const EVENT_STATUSES = ["受付中", "終了", "休み"];
 export const ATTRIBUTES = ["初回", "リピ", "初回指名", "指名", "要確認"];
 export const TIME_SLOTS = ["前半", "後半"];
+export const REQUEST_TIME_SLOTS = ["前半", "後半", "どちらでも可"];
+export const REQUEST_TIME_SLOT_LABELS = {
+  [TIME_SLOTS[0]]: "前半希望",
+  [TIME_SLOTS[1]]: "後半希望",
+  "どちらでも可": "どちらでも可",
+};
 export const SEAT_TYPES = ["通常席", "アイバン席"];
 export const RESERVATION_SEAT_ORDER = [SEAT_TYPES[1], SEAT_TYPES[0]];
 export const TIME_SLOT_LABELS = {
@@ -93,6 +99,8 @@ export function mergeSharedState(remoteState, localState) {
       ? `${item.event_date_id}:${item.time_slot}:${item.seat_type}:${item.group_no}`
       : item.id;
   });
+  merged.reservation_settings = mergeByKey(remote.reservation_settings, local.reservation_settings, (item) => item.event_date_id || item.id);
+  merged.reservation_requests = mergeByKey(remote.reservation_requests, local.reservation_requests, (item) => item.id);
   merged.drink_plans = mergeByKey(remote.drink_plans, local.drink_plans, (item) => item.id);
   merged.histories = mergeHistory(remote.histories, local.histories);
   return merged;
@@ -203,6 +211,8 @@ export function buildDefaultState(baseDate = new Date()) {
     attendance_entries: [],
     staff_attendance_entries: [],
     reservations: [],
+    reservation_settings: [],
+    reservation_requests: [],
     drink_plans: [],
     histories: [],
   };
@@ -669,6 +679,197 @@ export function deleteReservation(state, reservationId, now = new Date()) {
   pushHistory(draft, "reservation", reservation.id, before, clone(reservation), stamp, "予約を削除");
   touch(draft, stamp);
   return { state: draft, ok: true, errors: [] };
+}
+
+export function getReservationSetting(state, eventId) {
+  const setting = (state.reservation_settings || []).find((item) => String(item.event_date_id) === String(eventId));
+  return {
+    id: setting?.id || `request_setting_${eventId}`,
+    event_date_id: eventId,
+    instance_count: Number(setting?.instance_count) === 2 ? 2 : 1,
+    created_at: setting?.created_at || null,
+    updated_at: setting?.updated_at || null,
+  };
+}
+
+export function getReservationRequestCapacity(state, eventId, timeSlot) {
+  if (!TIME_SLOTS.includes(timeSlot)) return 0;
+  return getReservationSetting(state, eventId).instance_count * 10;
+}
+
+export function getAllowedRequestTimeSlots(state, eventId) {
+  return getReservationSetting(state, eventId).instance_count === 2 ? REQUEST_TIME_SLOTS : TIME_SLOTS;
+}
+
+export function upsertReservationSetting(state, input, now = new Date()) {
+  const draft = clone(state);
+  draft.reservation_settings ||= [];
+  const stamp = new Date(now).toISOString();
+  const eventId = input.event_date_id;
+  const event = findEvent(draft, eventId);
+  const errors = [];
+  if (!event) errors.push("イベント日が見つかりません。");
+  const instanceCount = Number(input.instance_count) === 2 ? 2 : 1;
+  if (errors.length) return { state, ok: false, errors };
+  const existing = draft.reservation_settings.find((item) => String(item.event_date_id) === String(eventId));
+  const before = existing ? clone(existing) : null;
+  const after = {
+    ...(existing || {
+      id: createId("request_setting"),
+      event_date_id: eventId,
+      created_at: stamp,
+    }),
+    instance_count: instanceCount,
+    updated_at: stamp,
+  };
+  if (existing) Object.assign(existing, after);
+  else draft.reservation_settings.push(after);
+  pushHistory(draft, "reservation_setting", after.id, before, after, stamp, "予約受付設定を変更");
+  touch(draft, stamp);
+  return { state: draft, ok: true, setting: after, errors: [] };
+}
+
+export function getReservationRequestsForEvent(state, eventId, { includeDeleted = false } = {}) {
+  return (state.reservation_requests || [])
+    .filter((request) => String(request.event_date_id) === String(eventId) && (includeDeleted || !request.is_deleted))
+    .sort(compareReservationRequests);
+}
+
+function compareReservationRequests(a, b) {
+  const created = String(a.created_at || "").localeCompare(String(b.created_at || ""));
+  if (created) return created;
+  return String(a.id || "").localeCompare(String(b.id || ""));
+}
+
+export function normalizeReservationRequest(state, input) {
+  const eventId = input.event_date_id;
+  const allowedTimeSlots = getAllowedRequestTimeSlots(state, eventId);
+  const desiredTimeSlot = allowedTimeSlots.includes(input.desired_time_slot) ? input.desired_time_slot : allowedTimeSlots[0];
+  return {
+    id: input.id || null,
+    event_date_id: eventId,
+    host_user_id: input.host_user_id || "",
+    desired_time_slot: desiredTimeSlot,
+    no_same_time_double_booking: input.no_same_time_double_booking === true || input.no_same_time_double_booking === "on" || input.no_same_time_double_booking === "true",
+    princess_name: (input.princess_name || "").trim(),
+    attribute: ATTRIBUTES.includes(input.attribute) ? input.attribute : "要確認",
+    ivan_name: (input.ivan_name || "").trim(),
+    ivan_attribute: ATTRIBUTES.includes(input.ivan_attribute) ? input.ivan_attribute : "要確認",
+    purple_count: toCount(input.purple_count),
+    red_count: toCount(input.red_count),
+    blue_count: toCount(input.blue_count),
+    green_count: toCount(input.green_count),
+    tower_count: toCount(input.tower_count) > 0 ? 1 : 0,
+    memo: input.memo || "",
+  };
+}
+
+export function isReservationRequestFilled(request) {
+  if (!request) return false;
+  return Boolean(
+    request.host_user_id ||
+    request.princess_name ||
+    request.ivan_name ||
+    request.purple_count ||
+    request.red_count ||
+    request.blue_count ||
+    request.green_count ||
+    request.tower_count ||
+    request.memo
+  );
+}
+
+export function upsertReservationRequest(state, input, options = {}) {
+  const draft = clone(state);
+  draft.reservation_requests ||= [];
+  const stamp = new Date(options.now || new Date()).toISOString();
+  const payload = normalizeReservationRequest(draft, input);
+  const event = findEvent(draft, payload.event_date_id);
+  const errors = [];
+  if (!event) errors.push("イベント日が見つかりません。");
+  if (event && event.status === "休み") errors.push("休み日は予約受付対象外です。");
+  if (event && !options.admin && !isReservationOpen(event, new Date(stamp))) {
+    errors.push("この日の予約入力は解放前です。");
+  }
+  if (!payload.host_user_id) errors.push("担当ホストを選択してください。");
+  if (!isReservationRequestFilled(payload)) errors.push("予約内容を入力してください。");
+  if (errors.length) return { state, ok: false, errors };
+
+  const existing = payload.id ? draft.reservation_requests.find((request) => String(request.id) === String(payload.id) && !request.is_deleted) : null;
+  const before = existing ? clone(existing) : null;
+  const after = {
+    ...(existing || {
+      id: createId("request"),
+      event_date_id: payload.event_date_id,
+      created_at: stamp,
+      placement_status: "auto",
+      deleted_at: null,
+      is_deleted: false,
+    }),
+    ...payload,
+    id: existing?.id || payload.id || createId("request"),
+    updated_at: stamp,
+  };
+  if (existing) Object.assign(existing, after);
+  else draft.reservation_requests.push(after);
+  pushHistory(draft, "reservation_request", after.id, before, after, stamp, before ? "予約受付を編集" : "予約受付を登録");
+  touch(draft, stamp);
+  return { state: draft, ok: true, request: after, errors: [] };
+}
+
+export function deleteReservationRequest(state, requestId, now = new Date()) {
+  const draft = clone(state);
+  draft.reservation_requests ||= [];
+  const stamp = new Date(now).toISOString();
+  const request = draft.reservation_requests.find((item) => String(item.id) === String(requestId) && !item.is_deleted);
+  if (!request) return { state, ok: false, errors: ["削除対象の予約受付が見つかりません。"] };
+  const before = clone(request);
+  request.is_deleted = true;
+  request.deleted_at = stamp;
+  request.updated_at = stamp;
+  pushHistory(draft, "reservation_request", request.id, before, clone(request), stamp, "予約受付を削除");
+  touch(draft, stamp);
+  return { state: draft, ok: true, errors: [] };
+}
+
+export function setReservationRequestPlacement(state, requestId, placementStatus, now = new Date()) {
+  const draft = clone(state);
+  draft.reservation_requests ||= [];
+  const stamp = new Date(now).toISOString();
+  const request = draft.reservation_requests.find((item) => String(item.id) === String(requestId) && !item.is_deleted);
+  if (!request) return { state, ok: false, errors: ["予約受付が見つかりません。"] };
+  const before = clone(request);
+  request.placement_status = ["auto", "reserved", "hold"].includes(placementStatus) ? placementStatus : "auto";
+  request.updated_at = stamp;
+  pushHistory(draft, "reservation_request", request.id, before, clone(request), stamp, "予約受付の扱いを変更");
+  touch(draft, stamp);
+  return { state: draft, ok: true, request, errors: [] };
+}
+
+export function getReservationRequestBuckets(state, eventId) {
+  const result = {
+    [TIME_SLOTS[0]]: { reserved: [], hold: [], capacity: getReservationRequestCapacity(state, eventId, TIME_SLOTS[0]) },
+    [TIME_SLOTS[1]]: { reserved: [], hold: [], capacity: getReservationRequestCapacity(state, eventId, TIME_SLOTS[1]) },
+    flexible: [],
+  };
+  for (const request of getReservationRequestsForEvent(state, eventId)) {
+    if (request.desired_time_slot === "どちらでも可") {
+      result.flexible.push(request);
+      continue;
+    }
+    const bucket = result[request.desired_time_slot] || result[TIME_SLOTS[0]];
+    if (request.placement_status === "reserved") {
+      bucket.reserved.push(request);
+      continue;
+    }
+    if (request.placement_status === "hold") {
+      bucket.hold.push(request);
+      continue;
+    }
+    if (bucket.reserved.length < bucket.capacity) bucket.reserved.push(request);
+    else bucket.hold.push(request);
+  }
+  return result;
 }
 
 export function getDrinkPlansForEvent(state, eventId, includeDeleted = false) {

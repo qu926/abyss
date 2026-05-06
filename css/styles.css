@@ -1194,6 +1194,105 @@ textarea:focus {
   font-weight: 800;
 }
 
+.request-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.request-setting-form,
+.reservation-request-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(8, 14, 23, 0.72);
+  padding: 14px;
+}
+
+.request-setting-form {
+  grid-template-columns: minmax(240px, 1fr) auto;
+}
+
+.checkbox-label {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+.checkbox-label input {
+  width: auto;
+}
+
+.request-summary-grid,
+.request-bucket-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.request-bucket {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(8, 14, 23, 0.72);
+  padding: 12px;
+}
+
+.request-bucket h4 {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.request-card-list {
+  display: grid;
+  gap: 8px;
+}
+
+.request-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(12, 20, 32, 0.86);
+  padding: 10px;
+}
+
+.request-card.reserved {
+  border-color: rgba(85, 210, 124, 0.45);
+}
+
+.request-card.hold {
+  border-color: rgba(255, 91, 91, 0.48);
+}
+
+.request-card div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.request-card span,
+.request-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--line);
@@ -1361,6 +1460,10 @@ textarea:focus {
   .form-grid,
   .bulk-attendance-row,
   .drink-plan-form,
+  .request-setting-form,
+  .reservation-request-form,
+  .request-summary-grid,
+  .request-bucket-grid,
   .role-form,
   .side-nav {
     grid-template-columns: 1fr;
