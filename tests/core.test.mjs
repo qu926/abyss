@@ -32,6 +32,7 @@ import {
   getMissingStaffMembers,
   getMissingUsers,
   getReservationOpenAt,
+  getReservationRequestAcceptanceStatus,
   getReservationRequestBuckets,
   getReservationRequestCapacity,
   getReservationRequestsForEvent,
@@ -587,6 +588,50 @@ test('reservation request prototype supports instance capacity, flexible request
   assert.equal(buckets.flexible.length, 1);
   assert.equal(buckets.flexible[0].no_same_time_double_booking, true);
   assert.equal(getReservationRequestsForEvent(state, event.id).length, 12);
+});
+
+test('reservation request acceptance closes at total instance capacity for hosts', () => {
+  let state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const event = activeEvent(state);
+  const setting = upsertReservationSetting(state, { event_date_id: event.id, instance_count: 2 }, '2026-05-03T12:00:00.000Z');
+  assert.equal(setting.ok, true);
+  state = setting.state;
+
+  for (let i = 0; i < 40; i += 1) {
+    const created = upsertReservationRequest(
+      state,
+      reservationRequestDraft(event.id, {
+        host_user_id: i % 2 ? 'u_daito' : 'u_kai',
+        desired_time_slot: i % 3 === 0 ? REQUEST_TIME_SLOTS[2] : i % 2 ? TIME_SLOTS[1] : TIME_SLOTS[0],
+        princess_name: `Guest ${i + 1}`,
+      }),
+      { admin: true, now: `2026-05-03T13:${String(i).padStart(2, '0')}:00.000Z` },
+    );
+    assert.equal(created.ok, true);
+    state = created.state;
+  }
+
+  assert.deepEqual(getReservationRequestAcceptanceStatus(state, event.id), {
+    total: 40,
+    capacity: 40,
+    remaining: 0,
+    closed: true,
+  });
+
+  const hostAttempt = upsertReservationRequest(
+    state,
+    reservationRequestDraft(event.id, { princess_name: 'Too late' }),
+    { admin: false, now: event.reservation_open_at },
+  );
+  assert.equal(hostAttempt.ok, false);
+  assert.equal(hostAttempt.errors.includes('受付上限に達しているため、予約受付は締め切られています。'), true);
+
+  const adminAttempt = upsertReservationRequest(
+    state,
+    reservationRequestDraft(event.id, { princess_name: 'Admin override' }),
+    { admin: true, now: '2026-05-03T14:00:00.000Z' },
+  );
+  assert.equal(adminAttempt.ok, true);
 });
 
 test('drink plans can be entered before reservation open and are tracked separately from actual drink totals', () => {

@@ -697,6 +697,21 @@ export function getReservationRequestCapacity(state, eventId, timeSlot) {
   return getReservationSetting(state, eventId).instance_count * 10;
 }
 
+export function getReservationRequestTotalCapacity(state, eventId) {
+  return TIME_SLOTS.reduce((total, slot) => total + getReservationRequestCapacity(state, eventId, slot), 0);
+}
+
+export function getReservationRequestAcceptanceStatus(state, eventId) {
+  const total = getReservationRequestsForEvent(state, eventId).length;
+  const capacity = getReservationRequestTotalCapacity(state, eventId);
+  return {
+    total,
+    capacity,
+    remaining: Math.max(0, capacity - total),
+    closed: capacity > 0 && total >= capacity,
+  };
+}
+
 export function getAllowedRequestTimeSlots(state, eventId) {
   return getReservationSetting(state, eventId).instance_count === 2 ? REQUEST_TIME_SLOTS : TIME_SLOTS;
 }
@@ -791,11 +806,15 @@ export function upsertReservationRequest(state, input, options = {}) {
   if (event && !options.admin && !isReservationOpen(event, new Date(stamp))) {
     errors.push("この日の予約入力は解放前です。");
   }
+  const existing = payload.id ? draft.reservation_requests.find((request) => String(request.id) === String(payload.id) && !request.is_deleted) : null;
+  const acceptance = getReservationRequestAcceptanceStatus(draft, payload.event_date_id);
+  if (!existing && !options.admin && acceptance.closed) {
+    errors.push("受付上限に達しているため、予約受付は締め切られています。");
+  }
   if (!payload.host_user_id) errors.push("担当ホストを選択してください。");
   if (!isReservationRequestFilled(payload)) errors.push("予約内容を入力してください。");
   if (errors.length) return { state, ok: false, errors };
 
-  const existing = payload.id ? draft.reservation_requests.find((request) => String(request.id) === String(payload.id) && !request.is_deleted) : null;
   const before = existing ? clone(existing) : null;
   const after = {
     ...(existing || {

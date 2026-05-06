@@ -42,6 +42,7 @@ import {
   getMissingUsers,
   getReservationOpenAt,
   getReservationRequestBuckets,
+  getReservationRequestAcceptanceStatus,
   getReservationRequestCapacity,
   getReservationRequestsForEvent,
   getReservationSetting,
@@ -782,16 +783,19 @@ function renderReservationRequestPrototype(eventId, { adminMode = false, locked 
   const setting = getReservationSetting(state, eventId);
   const requests = getReservationRequestsForEvent(state, eventId);
   const buckets = getReservationRequestBuckets(state, eventId);
+  const acceptance = getReservationRequestAcceptanceStatus(state, eventId);
+  const requestLocked = locked || (!adminMode && acceptance.closed);
   return `
     <section class="request-panel">
       <div class="section-title">
         <h3>予約受付方式（仮）</h3>
-        <span class="capacity ok">${setting.instance_count}インスタンス / ${getReservationRequestCapacity(state, eventId, TIME_SLOTS[0])}件ずつ</span>
+        <span class="capacity ${acceptance.closed ? "full" : "ok"}">${setting.instance_count}インスタンス / 合計 ${acceptance.total} / ${acceptance.capacity}</span>
       </div>
       <p class="plan-note">ホストは席を選ばず、受付順に予約を登録します。運営があとから予約枠・保留枠・インスタンスへ振り分けるための仮画面です。</p>
+      ${acceptance.closed ? `<div class="notice muted">受付上限 ${acceptance.capacity}件に達しています。ホスト側の新規受付は締切です。</div>` : ""}
       ${adminMode ? renderReservationRequestSettingForm(eventId, setting) : ""}
-      ${renderReservationRequestForm(eventId, setting, locked)}
-      ${renderReservationRequestSummary(buckets, setting)}
+      ${renderReservationRequestForm(eventId, setting, requestLocked)}
+      ${renderReservationRequestSummary(buckets, setting, acceptance)}
       ${renderReservationRequestBuckets(buckets, adminMode)}
       ${renderReservationRequestList(requests, adminMode, locked)}
     </section>
@@ -849,9 +853,15 @@ function renderReservationRequestForm(eventId, setting, locked) {
   `;
 }
 
-function renderReservationRequestSummary(buckets, setting) {
+function renderReservationRequestSummary(buckets, setting, acceptance) {
   return `
     <div class="request-summary-grid">
+      <div class="mini-panel">
+        <span>受付合計</span>
+        <strong>${acceptance.total} / ${acceptance.capacity}</strong>
+        <em>${acceptance.closed ? "受付締切" : `残り${acceptance.remaining}`}</em>
+        <span class="capacity ${acceptance.closed ? "full" : "ok"}">${acceptance.closed ? "締切" : "受付中"}</span>
+      </div>
       ${TIME_SLOTS.map((slot) => {
         const bucket = buckets[slot];
         const level = bucket.reserved.length > bucket.capacity ? "over" : bucket.reserved.length === bucket.capacity ? "full" : "ok";
@@ -894,14 +904,34 @@ function renderRequestCards(requests, adminMode, emptyText) {
 function renderRequestCard(request, adminMode) {
   const hostName = findUser(state, request.host_user_id)?.display_name || "未選択";
   const drinks = formatRequestDrinks(request);
+  const flexibleHint = getFlexibleRequestHint(request);
   return `
     <article class="request-card ${request.placement_status || "auto"}">
       <div><strong>${escapeHtml(hostName)}</strong><span>${escapeHtml(REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot)} / ${formatHistoryDateTime(request.created_at)}</span></div>
       <p>${escapeHtml(formatReservationGuestMeta(request) || "姫名未入力")}</p>
-      <p>${escapeHtml([drinks, request.no_same_time_double_booking ? "同タイム2枠不可" : "", request.memo].filter(Boolean).join(" / "))}</p>
+      <p>${escapeHtml([drinks, request.no_same_time_double_booking ? "同タイム2枠不可" : "", flexibleHint, request.memo].filter(Boolean).join(" / "))}</p>
       ${adminMode ? renderRequestPlacementActions(request) : ""}
     </article>
   `;
+}
+
+function getFlexibleRequestHint(request) {
+  if (request.desired_time_slot !== "どちらでも可" || !request.host_user_id) return "";
+  const siblingRequests = getReservationRequestsForEvent(state, request.event_date_id)
+    .filter((item) => item.id !== request.id && item.host_user_id === request.host_user_id);
+  if (request.no_same_time_double_booking) {
+    const blockedSlots = TIME_SLOTS.filter((slot) => {
+      return siblingRequests.some((item) => {
+        return item.desired_time_slot === slot && (item.no_same_time_double_booking || request.no_same_time_double_booking);
+      });
+    });
+    const candidates = TIME_SLOTS.filter((slot) => !blockedSlots.includes(slot));
+    if (candidates.length === 1) return `実質${REQUEST_TIME_SLOT_LABELS[candidates[0]]}`;
+    if (!candidates.length) return "同タイム重複注意";
+    const flexibleSiblings = siblingRequests.filter((item) => item.desired_time_slot === "どちらでも可" && item.no_same_time_double_booking);
+    if (flexibleSiblings.length) return "前後半に分けて調整";
+  }
+  return "";
 }
 
 function renderRequestPlacementActions(request) {
@@ -928,7 +958,7 @@ function renderReservationRequestList(requests, adminMode, locked) {
             <tr>
               <td>#${String(index + 1).padStart(3, "0")}<br>${formatHistoryDateTime(request.created_at)}</td>
               <td>${escapeHtml(findUser(state, request.host_user_id)?.display_name || "未選択")}</td>
-              <td>${escapeHtml(REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot)}${request.no_same_time_double_booking ? "<br><strong>同タイム2枠不可</strong>" : ""}</td>
+              <td>${escapeHtml(REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot)}${request.no_same_time_double_booking ? "<br><strong>同タイム2枠不可</strong>" : ""}${getFlexibleRequestHint(request) ? `<br><em>${escapeHtml(getFlexibleRequestHint(request))}</em>` : ""}</td>
               <td>${escapeHtml(formatReservationGuestMeta(request))}</td>
               <td>${escapeHtml([formatRequestDrinks(request), request.memo].filter(Boolean).join(" / "))}</td>
               <td>${escapeHtml(formatPlacementStatus(request.placement_status))}</td>
