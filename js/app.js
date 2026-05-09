@@ -1855,6 +1855,12 @@ function formatHistoryDateTime(value) {
 }
 
 function formatHistoryTarget(history) {
+  const targetType = formatHistoryTargetType(history);
+  const targetDetail = formatHistoryTargetDetail(history);
+  return targetDetail ? `${targetType} / ${targetDetail}` : targetType;
+}
+
+function formatHistoryTargetType(history) {
   if (history.target_type === "reservation") return "予約";
   if (history.target_type === "reservation_request") return "予約受付";
   if (history.target_type === "reservation_setting") return "予約受付設定";
@@ -1866,6 +1872,21 @@ function formatHistoryTarget(history) {
   if (history.target_type === "staff_member") return "内勤";
   if (history.target_type === "long_vacation") return "長期休暇";
   return history.target_type;
+}
+
+function formatHistoryTargetDetail(history) {
+  const payload = history.after_payload || history.before_payload || {};
+  if (history.target_type === "attendance") {
+    const hostName = payload.user_id ? findUser(state, payload.user_id)?.display_name || payload.user_id : "";
+    const event = payload.event_date_id ? findEvent(state, payload.event_date_id) : null;
+    return [hostName, event ? formatDateLabel(event.event_date) : ""].filter(Boolean).join(" / ");
+  }
+  if (history.target_type === "staff_attendance") {
+    const staffName = payload.staff_member_id ? findStaffMember(state, payload.staff_member_id)?.display_name || payload.staff_member_id : "";
+    const event = payload.event_date_id ? findEvent(state, payload.event_date_id) : null;
+    return [staffName, event ? formatDateLabel(event.event_date) : ""].filter(Boolean).join(" / ");
+  }
+  return "";
 }
 
 function renderDataTools() {
