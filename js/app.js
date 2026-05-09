@@ -56,6 +56,7 @@ import {
   getTimeSlotLabel,
   getMissingStaffMembers,
   getStaffAttendanceEntry,
+  getStaffAttendanceEntriesForEvent,
   getStaffAttendanceSummary,
   getVacationExemptUsers,
   isEventArchived,
@@ -1794,6 +1795,7 @@ function renderArchiveItem(event) {
               ${renderDrinkStatusList(event.id)}
             </div>
           </div>
+          ${renderArchiveAttendance(event.id)}
           ${renderDrinkPlans(event.id, { locked: true })}
           <div class="subsection">
             <h3>予約アーカイブ</h3>
@@ -1804,6 +1806,51 @@ function renderArchiveItem(event) {
       ` : ""}
     </section>
   `;
+}
+
+function renderArchiveAttendance(eventId) {
+  const hostItems = getAttendanceEntriesForEvent(state, eventId)
+    .filter((entry) => entry.status === "出勤" || entry.status === "体入")
+    .map((entry) => {
+      const user = findUser(state, entry.user_id);
+      return {
+        name: user?.display_name || entry.user_id || "不明",
+        sortKey: user?.kana || user?.display_name || entry.user_id || "",
+        status: entry.status,
+      };
+    })
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey, "ja"));
+  const staffItems = getStaffAttendanceEntriesForEvent(state, eventId)
+    .filter((entry) => entry.status === "出勤")
+    .map((entry) => {
+      const member = findStaffMember(state, entry.staff_member_id);
+      return {
+        name: member?.display_name || entry.staff_member_id || "不明",
+        sortKey: member?.kana || member?.display_name || entry.staff_member_id || "",
+        status: entry.status,
+      };
+    })
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey, "ja"));
+
+  return `
+    <div class="split">
+      <div class="mini-panel">
+        <h3>ホスト出勤記録</h3>
+        ${renderArchiveAttendanceList(hostItems, "出勤・体入のホストはいません。")}
+      </div>
+      <div class="mini-panel">
+        <h3>内勤出勤記録</h3>
+        ${renderArchiveAttendanceList(staffItems, "出勤の内勤はいません。")}
+      </div>
+    </div>
+  `;
+}
+
+function renderArchiveAttendanceList(items, emptyText) {
+  if (!items.length) return `<p class="empty">${emptyText}</p>`;
+  return `<ul class="name-list">${items
+    .map((item) => `<li>${escapeHtml(item.name)}<span>${escapeHtml(item.status)}</span></li>`)
+    .join("")}</ul>`;
 }
 
 function renderDeletedReservations(deletedReservations) {
