@@ -94,6 +94,24 @@ const APP_CONFIG = window.ABYSS_CONFIG || {};
 const root = document.querySelector("#app");
 const toastRoot = document.querySelector("#toast");
 const HOST_ATTENDANCE_LIST_STATUSES = ["出勤", "欠席", "未定", "体入", "未入力", "長期休暇"];
+const VIEW_PAGES = new Set(["attendance", "staffAttendance", "attendanceList", "reservation", "admin"]);
+const ADMIN_TABS = new Set([
+  "dashboard",
+  "attendance",
+  "staffAttendance",
+  "missing",
+  "hosts",
+  "staff",
+  "vacations",
+  "events",
+  "reservations",
+  "archive",
+  "totals",
+  "discord",
+  "histories",
+  "data",
+]);
+const RESERVATION_TABS = new Set(["grid", "requests", "towers"]);
 
 let state = loadState();
 let syncStatus = getInitialSyncStatus();
@@ -124,6 +142,7 @@ view.eventId = getDefaultEventId();
 view.archiveEventId = getDefaultArchiveEventId();
 view.attendanceUserId = getActiveUsers(state)[0]?.id || "";
 view.staffAttendanceMemberId = getActiveStaffMembers(state)[0]?.id || "";
+restoreViewFromLocation();
 
 render();
 initializeSharedState();
@@ -131,6 +150,10 @@ initializeSharedState();
 root.addEventListener("click", handleClick);
 root.addEventListener("submit", handleSubmit);
 root.addEventListener("change", handleChange);
+window.addEventListener("hashchange", () => {
+  restoreViewFromLocation();
+  render();
+});
 window.setInterval(archiveEndedEvents, 60_000);
 
 function loadState() {
@@ -412,6 +435,44 @@ function getDefaultArchiveEventId() {
   return archived[0]?.id || "";
 }
 
+function restoreViewFromLocation() {
+  const hash = window.location.hash.replace(/^#/, "");
+  if (!hash) return;
+  const params = new URLSearchParams(hash);
+  const page = params.get("page");
+  const adminTab = params.get("adminTab");
+  const reservationTab = params.get("reservationTab");
+
+  if (VIEW_PAGES.has(page)) view.page = page;
+  if (ADMIN_TABS.has(adminTab)) view.adminTab = adminTab;
+  if (RESERVATION_TABS.has(reservationTab)) view.reservationTab = reservationTab;
+  if (params.has("eventId")) view.eventId = params.get("eventId") || view.eventId;
+  if (params.has("archiveEventId")) view.archiveEventId = params.get("archiveEventId") || "";
+  if (params.has("attendanceUserId")) view.attendanceUserId = params.get("attendanceUserId") || view.attendanceUserId;
+  if (params.has("staffAttendanceMemberId")) view.staffAttendanceMemberId = params.get("staffAttendanceMemberId") || view.staffAttendanceMemberId;
+  if (params.has("dashboardDetailType")) view.dashboardDetailType = params.get("dashboardDetailType") || "";
+  if (params.has("dashboardDetailKey")) view.dashboardDetailKey = params.get("dashboardDetailKey") || "";
+}
+
+function saveViewToLocation() {
+  const params = new URLSearchParams();
+  params.set("page", view.page);
+  params.set("eventId", view.eventId || "");
+  if (view.page === "admin") params.set("adminTab", view.adminTab);
+  if (view.page === "reservation" || (view.page === "admin" && view.adminTab === "reservations")) {
+    params.set("reservationTab", view.reservationTab);
+  }
+  if (view.archiveEventId) params.set("archiveEventId", view.archiveEventId);
+  if (view.attendanceUserId) params.set("attendanceUserId", view.attendanceUserId);
+  if (view.staffAttendanceMemberId) params.set("staffAttendanceMemberId", view.staffAttendanceMemberId);
+  if (view.dashboardDetailType) params.set("dashboardDetailType", view.dashboardDetailType);
+  if (view.dashboardDetailKey) params.set("dashboardDetailKey", view.dashboardDetailKey);
+
+  const nextHash = `#${params.toString()}`;
+  if (window.location.hash === nextHash) return;
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+}
+
 function render() {
   if (!siteUnlocked) {
     root.innerHTML = renderSiteLogin();
@@ -424,6 +485,7 @@ function render() {
   if (!findUser(state, view.attendanceUserId)) view.attendanceUserId = getActiveUsers(state)[0]?.id || "";
   const selectedStaffMember = findStaffMember(state, view.staffAttendanceMemberId);
   if (!selectedStaffMember || selectedStaffMember.is_active === false) view.staffAttendanceMemberId = getActiveStaffMembers(state)[0]?.id || "";
+  saveViewToLocation();
 
   root.innerHTML = `
     <div class="app-shell">
