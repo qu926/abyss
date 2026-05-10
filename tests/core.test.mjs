@@ -5,7 +5,6 @@ import {
   ATTRIBUTES,
   DRINK_LIMITS,
   EVENT_STATUSES,
-  REQUEST_TIME_SLOTS,
   RESERVATION_SEAT_ORDER,
   SEAT_TYPES,
   STAFF_ATTENDANCE_STATUSES,
@@ -36,6 +35,8 @@ import {
   getReservationRequestAcceptanceStatus,
   getReservationRequestBuckets,
   getReservationRequestCapacity,
+  getReservationRequestIvanCapacity,
+  getReservationRequestNormalCapacity,
   getReservationRequestsForEvent,
   getReservationSetting,
   getReservationSaveConflict,
@@ -139,15 +140,33 @@ function reservationRequestDraft(eventId, overrides = {}) {
   };
 }
 
+function ensureActiveHosts(state, count) {
+  const stamp = '2026-05-01T00:00:00.000Z';
+  while (getActiveUsers(state).length < count) {
+    const index = state.users.length + 1;
+    state.users.push({
+      id: `u_test_${index}`,
+      display_name: `Test Host ${index}`,
+      kana: `test-${String(index).padStart(2, '0')}`,
+      role: 'ホスト',
+      is_active: true,
+      note: '',
+      created_at: stamp,
+      updated_at: stamp,
+    });
+  }
+  return getActiveUsers(state);
+}
+
 test('date helpers and default events use local dates and Friday/Saturday event days', () => {
   const date = new Date(2026, 4, 2, 9, 8);
   assert.equal(todayString(date), '2026-05-02');
   assert.equal(toLocalDateTimeString(date), '2026-05-02T09:08');
-  assert.equal(getReservationOpenAt('2026-05-03'), '2026-04-26T22:00');
-  assert.equal(getReservationOpenAt('2026-05-08'), '2026-05-03T22:00');
-  assert.equal(getReservationOpenAt('2026-05-09'), '2026-05-03T22:00');
-  assert.equal(getReservationOpenAt('2026-05-10'), '2026-05-03T22:00');
-  assert.equal(getReservationOpenAt('2026-05-16'), '2026-05-10T22:00');
+  assert.equal(getReservationOpenAt('2026-05-03'), '2026-04-29T22:00');
+  assert.equal(getReservationOpenAt('2026-05-08'), '2026-05-06T22:00');
+  assert.equal(getReservationOpenAt('2026-05-09'), '2026-05-06T22:00');
+  assert.equal(getReservationOpenAt('2026-05-10'), '2026-05-06T22:00');
+  assert.equal(getReservationOpenAt('2026-05-16'), '2026-05-13T22:00');
   assert.equal(getReservationRequestOpenAt('2026-05-08'), '2026-05-06T22:00');
   assert.equal(getReservationRequestOpenAt('2026-05-09'), '2026-05-06T22:00');
   assert.equal(getReservationRequestOpenAt('2026-05-10'), '2026-05-06T22:00');
@@ -532,26 +551,47 @@ test('reservation save conflicts protect occupied slots and stale edits', () => 
   assert.equal(getReservationSaveConflict(deleted.state, occupiedConflict.reservation), null);
 });
 
-test('reservation request prototype supports instance capacity, flexible requests, and manual holds', () => {
+test('reservation request prototype supports seat capacities, host limits, and manual holds', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
+  let hosts = ensureActiveHosts(state, 30);
 
   assert.equal(getReservationSetting(state, event.id).instance_count, 1);
+  assert.equal(getReservationRequestNormalCapacity(state, event.id, TIME_SLOTS[0]), 8);
+  assert.equal(getReservationRequestIvanCapacity(state, event.id, TIME_SLOTS[0]), 2);
   assert.equal(getReservationRequestCapacity(state, event.id, TIME_SLOTS[0]), 10);
-  const flexibleOnOneInstance = upsertReservationRequest(
+
+  const backRequest = upsertReservationRequest(
     state,
-    reservationRequestDraft(event.id, { desired_time_slot: REQUEST_TIME_SLOTS[2] }),
+    reservationRequestDraft(event.id, {
+      host_user_id: hosts[0].id,
+      desired_time_slot: TIME_SLOTS[1],
+      princess_name: 'Back Guest',
+    }),
     { admin: true, now: '2026-05-03T13:00:00.000Z' },
   );
-  assert.equal(flexibleOnOneInstance.ok, true);
-  assert.equal(flexibleOnOneInstance.request.desired_time_slot, TIME_SLOTS[0]);
+  assert.equal(backRequest.ok, true);
+  state = backRequest.state;
+
+  const duplicateSameHostSlot = upsertReservationRequest(
+    state,
+    reservationRequestDraft(event.id, {
+      host_user_id: hosts[0].id,
+      desired_time_slot: TIME_SLOTS[1],
+      princess_name: 'Duplicate Back Guest',
+    }),
+    { admin: true, now: '2026-05-03T13:01:00.000Z' },
+  );
+  assert.equal(duplicateSameHostSlot.ok, false);
+  assert.equal(duplicateSameHostSlot.errors.includes('同じホストは前半1枠、後半1枠までです。'), true);
 
   state = buildDefaultState(new Date(2026, 4, 15, 12));
-  for (let i = 0; i < 11; i += 1) {
+  hosts = ensureActiveHosts(state, 30);
+  for (let i = 0; i < 9; i += 1) {
     const created = upsertReservationRequest(
       state,
       reservationRequestDraft(event.id, {
-        host_user_id: i % 2 ? 'u_daito' : 'u_kai',
+        host_user_id: hosts[i].id,
         princess_name: `Guest ${i + 1}`,
       }),
       { admin: true, now: `2026-05-03T13:${String(i).padStart(2, '0')}:00.000Z` },
@@ -561,55 +601,79 @@ test('reservation request prototype supports instance capacity, flexible request
   }
 
   let buckets = getReservationRequestBuckets(state, event.id);
-  assert.equal(buckets[TIME_SLOTS[0]].reserved.length, 10);
-  assert.equal(buckets[TIME_SLOTS[0]].hold.length, 1);
+  assert.equal(buckets[TIME_SLOTS[0]].normal.reserved.length, 8);
+  assert.equal(buckets[TIME_SLOTS[0]].normal.hold.length, 1);
 
-  const first = buckets[TIME_SLOTS[0]].reserved[0];
+  const first = buckets[TIME_SLOTS[0]].normal.reserved[0];
   const held = setReservationRequestPlacement(state, first.id, 'hold', '2026-05-03T13:20:00.000Z');
   assert.equal(held.ok, true);
   state = held.state;
   buckets = getReservationRequestBuckets(state, event.id);
-  assert.equal(buckets[TIME_SLOTS[0]].reserved.some((request) => request.princess_name === 'Guest 11'), true);
-  assert.equal(buckets[TIME_SLOTS[0]].hold.some((request) => request.id === first.id), true);
+  assert.equal(buckets[TIME_SLOTS[0]].normal.reserved.some((request) => request.princess_name === 'Guest 9'), true);
+  assert.equal(buckets[TIME_SLOTS[0]].normal.hold.some((request) => request.id === first.id), true);
 
-  const setting = upsertReservationSetting(state, { event_date_id: event.id, instance_count: 2 }, '2026-05-03T13:30:00.000Z');
+  const setting = upsertReservationSetting(
+    state,
+    { event_date_id: event.id, instance_count: 2, normal_capacity_front: 18, normal_capacity_back: 19 },
+    '2026-05-03T13:30:00.000Z',
+  );
   assert.equal(setting.ok, true);
   state = setting.state;
   assert.equal(getReservationSetting(state, event.id).instance_count, 2);
-  assert.equal(getReservationRequestCapacity(state, event.id, TIME_SLOTS[1]), 20);
+  assert.equal(getReservationRequestNormalCapacity(state, event.id, TIME_SLOTS[0]), 18);
+  assert.equal(getReservationRequestNormalCapacity(state, event.id, TIME_SLOTS[1]), 19);
+  assert.equal(getReservationRequestIvanCapacity(state, event.id, TIME_SLOTS[1]), 4);
+  assert.equal(getReservationRequestCapacity(state, event.id, TIME_SLOTS[1]), 23);
 
-  const flexible = upsertReservationRequest(
+  const thirdIvan = upsertReservationRequest(
     state,
     reservationRequestDraft(event.id, {
-      desired_time_slot: REQUEST_TIME_SLOTS[2],
-      princess_name: 'Flexible Guest',
-      no_same_time_double_booking: true,
+      host_user_id: hosts[20].id,
+      ivan_name: 'Ivan Guest',
+      princess_name: 'Ivan Princess',
     }),
     { admin: true, now: '2026-05-03T13:31:00.000Z' },
   );
-  assert.equal(flexible.ok, true);
-  state = flexible.state;
-  buckets = getReservationRequestBuckets(state, event.id);
-  assert.equal(buckets.flexible.length, 1);
-  assert.equal(buckets.flexible[0].no_same_time_double_booking, true);
-  assert.equal(getReservationRequestsForEvent(state, event.id).length, 12);
+  assert.equal(thirdIvan.ok, true);
 });
 
 test('reservation request acceptance closes after five hold slots for hosts', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
+  const hosts = ensureActiveHosts(state, 30);
   const setting = upsertReservationSetting(state, { event_date_id: event.id, instance_count: 2 }, '2026-05-03T12:00:00.000Z');
   assert.equal(setting.ok, true);
   state = setting.state;
 
-  for (let i = 0; i < 45; i += 1) {
+  const requests = [
+    ...Array.from({ length: 21 }, (_, i) => ({
+      host_user_id: hosts[i].id,
+      desired_time_slot: TIME_SLOTS[0],
+      princess_name: `Front Normal ${i + 1}`,
+    })),
+    ...Array.from({ length: 16 }, (_, i) => ({
+      host_user_id: hosts[i].id,
+      desired_time_slot: TIME_SLOTS[1],
+      princess_name: `Back Normal ${i + 1}`,
+    })),
+    ...Array.from({ length: 4 }, (_, i) => ({
+      host_user_id: hosts[i + 21].id,
+      desired_time_slot: TIME_SLOTS[0],
+      princess_name: `Front Ivan ${i + 1}`,
+      ivan_name: `Ivan ${i + 1}`,
+    })),
+    ...Array.from({ length: 4 }, (_, i) => ({
+      host_user_id: hosts[i + 16].id,
+      desired_time_slot: TIME_SLOTS[1],
+      princess_name: `Back Ivan ${i + 1}`,
+      ivan_name: `Back Ivan ${i + 1}`,
+    })),
+  ];
+
+  for (let i = 0; i < requests.length; i += 1) {
     const created = upsertReservationRequest(
       state,
-      reservationRequestDraft(event.id, {
-        host_user_id: i % 2 ? 'u_daito' : 'u_kai',
-        desired_time_slot: i % 3 === 0 ? REQUEST_TIME_SLOTS[2] : i % 2 ? TIME_SLOTS[1] : TIME_SLOTS[0],
-        princess_name: `Guest ${i + 1}`,
-      }),
+      reservationRequestDraft(event.id, requests[i]),
       { admin: true, now: `2026-05-03T13:${String(i).padStart(2, '0')}:00.000Z` },
     );
     assert.equal(created.ok, true);
@@ -636,7 +700,7 @@ test('reservation request acceptance closes after five hold slots for hosts', ()
 
   const adminAttempt = upsertReservationRequest(
     state,
-    reservationRequestDraft(event.id, { princess_name: 'Admin override' }),
+    reservationRequestDraft(event.id, { host_user_id: hosts[25].id, princess_name: 'Admin override' }),
     { admin: true, now: '2026-05-03T14:00:00.000Z' },
   );
   assert.equal(adminAttempt.ok, true);
@@ -645,7 +709,7 @@ test('reservation request acceptance closes after five hold slots for hosts', ()
 test('reservation request prototype opens on Wednesday at 22:00 for hosts', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = state.event_dates.find((item) => item.event_date === '2026-05-08');
-  assert.equal(event.reservation_open_at, '2026-05-03T22:00');
+  assert.equal(event.reservation_open_at, '2026-05-06T22:00');
   assert.equal(getReservationRequestOpenAt(event.event_date), '2026-05-06T22:00');
 
   const beforeRequestOpen = upsertReservationRequest(

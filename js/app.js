@@ -5,7 +5,6 @@ import {
   DRINK_PLAN_TYPES,
   EVENT_STATUSES,
   REQUEST_TIME_SLOT_LABELS,
-  REQUEST_TIME_SLOTS,
   RESERVATION_SEAT_ORDER,
   SEAT_TYPES,
   SLOT_LIMITS,
@@ -44,7 +43,6 @@ import {
   getReservationRequestOpenAt,
   getReservationRequestBuckets,
   getReservationRequestAcceptanceStatus,
-  getReservationRequestCapacity,
   getReservationRequestsForEvent,
   getReservationSetting,
   getReservationSaveConflict,
@@ -64,6 +62,7 @@ import {
   isOnVacation,
   isReservationOpen,
   isReservationRequestOpen,
+  isReservationRequestIvan,
   mergeSharedState,
   normalizeReservation,
   setReservationRequestPlacement,
@@ -840,7 +839,7 @@ function renderReservationOpenNotice(event, adminMode) {
   if (isReservationOpen(event)) {
     return `<div class="notice success">予約入力受付中です。解放日時: ${formatDateTime(event.reservation_open_at)}</div>`;
   }
-  return `<div class="notice muted">この日の予約入力は直前の日曜22:00から開始されます。現在は閲覧のみ可能です。解放日時: ${formatDateTime(event.reservation_open_at)}</div>`;
+  return `<div class="notice muted">この日の予約入力は対象週の水曜22:00から開始されます。現在は閲覧のみ可能です。解放日時: ${formatDateTime(event.reservation_open_at)}</div>`;
 }
 
 function renderReservationRequestOpenNotice(event, adminMode) {
@@ -874,8 +873,8 @@ function renderReservationRequestPrototype(eventId, { adminMode = false, locked 
       ${acceptance.closed ? `<div class="notice muted">受付上限 ${acceptance.capacity}件（予約枠${acceptance.reservationCapacity} + 保留枠${acceptance.holdCapacity}）に達しています。ホスト側の新規受付は締切です。</div>` : ""}
       ${adminMode ? renderReservationRequestSettingForm(eventId, setting) : ""}
       ${renderReservationRequestForm(eventId, setting, requestLocked)}
-      ${renderReservationRequestSummary(buckets, setting, acceptance)}
-      ${renderReservationRequestBuckets(buckets, adminMode)}
+      ${renderReservationRequestSummaryV2(buckets, setting, acceptance)}
+      ${renderReservationRequestBucketsV2(buckets, adminMode)}
       ${renderReservationRequestList(requests, adminMode, locked)}
     </section>
   `;
@@ -887,14 +886,22 @@ function renderReservationRequestSettingForm(eventId, setting) {
       <input type="hidden" name="event_date_id" value="${escapeAttr(eventId)}">
       <div class="request-setting-copy">
         <strong>運営用: インスタンス数設定</strong>
-        <span>2インスタンスにする場合はここで切り替えます。2にすると前半/後半20件ずつ、どちらでも可が使えます。</span>
+        <span>1インスタンスは通常席8件・アイバン2件、2インスタンスはアイバン4件です。2インスタンス時のみ通常席MAXを変更できます。</span>
       </div>
       <label>
         <span>インスタンス数</span>
         <select name="instance_count">
-          ${option("1", "1インスタンス（前半10 / 後半10・どちらでも可なし）", setting.instance_count === 1)}
-          ${option("2", "2インスタンス（前半20 / 後半20・どちらでも可あり）", setting.instance_count === 2)}
+          ${option("1", "1インスタンス（通常8 + アイバン2）", setting.instance_count === 1)}
+          ${option("2", "2インスタンス（通常席MAX指定 + アイバン4）", setting.instance_count === 2)}
         </select>
+      </label>
+      <label>
+        <span>前半 通常席MAX</span>
+        <input name="normal_capacity_front" type="number" min="0" max="99" step="1" value="${setting.instance_count === 2 ? setting.normal_capacity_front : 16}">
+      </label>
+      <label>
+        <span>後半 通常席MAX</span>
+        <input name="normal_capacity_back" type="number" min="0" max="99" step="1" value="${setting.instance_count === 2 ? setting.normal_capacity_back : 16}">
       </label>
       <button class="primary-button" type="submit">設定を反映</button>
     </form>
@@ -902,14 +909,13 @@ function renderReservationRequestSettingForm(eventId, setting) {
 }
 
 function renderReservationRequestForm(eventId, setting, locked) {
-  const allowedSlots = setting.instance_count === 2 ? REQUEST_TIME_SLOTS : TIME_SLOTS;
+  const allowedSlots = TIME_SLOTS;
   return `
     <form class="reservation-request-form" data-action="save-reservation-request">
       <input type="hidden" name="event_date_id" value="${escapeAttr(eventId)}">
       <div class="request-form-row request-host-row">
         <label><span>担当ホスト</span><select name="host_user_id" ${locked ? "disabled" : ""}><option value="">未選択</option>${getActiveUsers(state).map((user) => option(user.id, user.display_name, false)).join("")}</select></label>
         <label><span>希望回</span><select name="desired_time_slot" ${locked ? "disabled" : ""}>${allowedSlots.map((slot) => option(slot, REQUEST_TIME_SLOT_LABELS[slot] || slot, false)).join("")}</select></label>
-        <label class="checkbox-label"><input name="no_same_time_double_booking" type="checkbox" ${locked ? "disabled" : ""}><span>同タイム2枠不可</span></label>
       </div>
       <div class="request-form-row request-guest-row">
         <label><span>姫名</span><input name="princess_name" ${locked ? "disabled" : ""}></label>
@@ -929,6 +935,94 @@ function renderReservationRequestForm(eventId, setting, locked) {
         <button class="primary-button" type="submit" ${locked ? "disabled" : ""}>受付に登録</button>
       </div>
     </form>
+  `;
+}
+
+function renderReservationRequestSummaryV2(buckets, setting, acceptance) {
+  return `
+    <div class="request-summary-grid">
+      <div class="mini-panel">
+        <span>受付合計</span>
+        <strong>${acceptance.total} / ${acceptance.capacity}</strong>
+        <em>予約枠${acceptance.reservationCapacity} + 保留${acceptance.holdCapacity}</em>
+        <span class="capacity ${acceptance.closed ? "full" : "ok"}">${acceptance.closed ? "締切" : "受付中"}</span>
+      </div>
+      <div class="mini-panel">
+        <span>保留枠</span>
+        <strong>${acceptance.holdUsed} / ${acceptance.holdCapacity}</strong>
+        <em>${acceptance.holdUsed ? "予約枠超過分" : "まだ予約枠内"}</em>
+        <span class="capacity ${acceptance.holdUsed >= acceptance.holdCapacity ? "full" : "ok"}">${acceptance.holdUsed >= acceptance.holdCapacity ? "満枠" : `残り${acceptance.holdCapacity - acceptance.holdUsed}`}</span>
+      </div>
+      ${TIME_SLOTS.map((slot) => {
+        const bucket = buckets[slot];
+        return [
+          renderRequestCapacityPanel(`${REQUEST_TIME_SLOT_LABELS[slot]} 通常席`, bucket.normal),
+          renderRequestCapacityPanel(`${REQUEST_TIME_SLOT_LABELS[slot]} アイバン枠`, bucket.ivan),
+        ].join("");
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderRequestCapacityPanel(label, bucket) {
+  const level = bucket.reserved.length > bucket.capacity ? "over" : bucket.reserved.length === bucket.capacity ? "full" : "ok";
+  return `<div class="mini-panel"><span>${escapeHtml(label)}</span><strong>${bucket.reserved.length} / ${bucket.capacity}</strong><em>${bucket.hold.length ? `保留 ${bucket.hold.length}` : "保留なし"}</em><span class="capacity ${level}">${level === "over" ? "超過" : level === "full" ? "満枠" : "受付中"}</span></div>`;
+}
+
+function renderReservationRequestBucketsV2(buckets, adminMode) {
+  return `
+    <div class="request-bucket-grid">
+      ${TIME_SLOTS.map((slot) => {
+        const bucket = buckets[slot];
+        return `
+          ${renderRequestSeatBucket(`${REQUEST_TIME_SLOT_LABELS[slot]} 通常席`, bucket.normal, adminMode)}
+          ${renderRequestSeatBucket(`${REQUEST_TIME_SLOT_LABELS[slot]} アイバン枠`, bucket.ivan, adminMode)}
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderRequestSeatBucket(label, bucket, adminMode) {
+  return `
+    <section class="request-bucket">
+      <div class="section-title">
+        <h3>${escapeHtml(label)}</h3>
+        <span class="capacity ${bucket.reserved.length > bucket.capacity ? "over" : "ok"}">${bucket.reserved.length} / ${bucket.capacity}</span>
+      </div>
+      ${renderRequestCardsV2(bucket.reserved, adminMode, "予約枠はまだありません。")}
+      <h4>保留枠</h4>
+      ${renderRequestCardsV2(bucket.hold, adminMode, "保留枠はまだありません。")}
+    </section>
+  `;
+}
+
+function renderRequestCardsV2(requests, adminMode, emptyText) {
+  if (!requests.length) return `<p class="empty">${emptyText}</p>`;
+  return `<div class="request-card-list">${requests.map((request) => renderRequestCardV2(request, adminMode)).join("")}</div>`;
+}
+
+function renderRequestCardV2(request, adminMode) {
+  const hostName = findUser(state, request.host_user_id)?.display_name || "未選択";
+  const drinks = formatRequestDrinks(request);
+  const seatType = isReservationRequestIvan(request) ? "アイバン枠" : "通常席";
+  return `
+    <article class="request-card ${request.placement_status || "auto"}">
+      <div><strong>${escapeHtml(hostName)}</strong><span>${escapeHtml(REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot)} / ${escapeHtml(seatType)} / ${formatHistoryDateTime(request.created_at)}</span></div>
+      <p>${escapeHtml(formatReservationGuestMeta(request) || "姫名未入力")}</p>
+      <p>${escapeHtml([drinks, request.memo].filter(Boolean).join(" / "))}</p>
+      ${adminMode ? renderRequestPlacementActionsV2(request) : ""}
+    </article>
+  `;
+}
+
+function renderRequestPlacementActionsV2(request) {
+  return `
+    <div class="request-actions">
+      <button class="icon-button" data-action="request-placement" data-request-id="${escapeAttr(request.id)}" data-placement-status="auto" type="button">自動</button>
+      <button class="icon-button save" data-action="request-placement" data-request-id="${escapeAttr(request.id)}" data-placement-status="reserved" type="button">予約枠扱い</button>
+      <button class="icon-button danger" data-action="request-placement" data-request-id="${escapeAttr(request.id)}" data-placement-status="hold" type="button">保留扱い</button>
+    </div>
   `;
 }
 
@@ -1043,7 +1137,7 @@ function renderReservationRequestList(requests, adminMode, locked) {
             <tr>
               <td>#${String(index + 1).padStart(3, "0")}<br>${formatHistoryDateTime(request.created_at)}</td>
               <td>${escapeHtml(findUser(state, request.host_user_id)?.display_name || "未選択")}</td>
-              <td>${escapeHtml(REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot)}${request.no_same_time_double_booking ? "<br><strong>同タイム2枠不可</strong>" : ""}${getFlexibleRequestHint(request) ? `<br><em>${escapeHtml(getFlexibleRequestHint(request))}</em>` : ""}</td>
+              <td>${escapeHtml(REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot)}</td>
               <td>${escapeHtml(formatReservationGuestMeta(request))}</td>
               <td>${escapeHtml([formatRequestDrinks(request), request.memo].filter(Boolean).join(" / "))}</td>
               <td>${escapeHtml(formatPlacementStatus(request.placement_status))}</td>
@@ -2386,7 +2480,7 @@ function handleSubmit(event) {
   if (action === "save-reservation-request") {
     const payload = {
       ...data,
-      no_same_time_double_booking: form.elements.no_same_time_double_booking?.checked || false,
+      no_same_time_double_booking: false,
     };
     const result = upsertReservationRequest(state, payload, { admin: view.page === "admin" });
     if (result.ok) form.reset();
@@ -2820,7 +2914,8 @@ function summarizePayload(payload) {
     "host_user_id",
     "desired_time_slot",
     "instance_count",
-    "no_same_time_double_booking",
+    "normal_capacity_front",
+    "normal_capacity_back",
     "placement_status",
     "item_type",
     "count",

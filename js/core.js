@@ -33,6 +33,8 @@ export const DRINK_LIMITS = {
 };
 export const DRINK_PLAN_TYPES = Object.entries(DRINK_LIMITS).map(([key, value]) => ({ key, label: value.label }));
 export const RESERVATION_REQUEST_HOLD_LIMIT = 5;
+export const RESERVATION_REQUEST_NORMAL_CAPACITY_PER_INSTANCE = 8;
+export const RESERVATION_REQUEST_IVAN_CAPACITY_PER_INSTANCE = 2;
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const STORAGE_VERSION = 1;
@@ -137,15 +139,14 @@ export function formatDateTime(value) {
 }
 
 export function getReservationOpenAt(eventDate) {
-  const date = toDate(eventDate);
-  const day = date.getDay();
-  const daysToReleaseSunday = day >= 5 ? day : day + 7;
-  date.setDate(date.getDate() - daysToReleaseSunday);
-  date.setHours(22, 0, 0, 0);
-  return toLocalDateTimeString(date);
+  return getWednesdayReservationOpenAt(eventDate);
 }
 
 export function getReservationRequestOpenAt(eventDate) {
+  return getWednesdayReservationOpenAt(eventDate);
+}
+
+function getWednesdayReservationOpenAt(eventDate) {
   const date = toDate(eventDate);
   const daysSinceWednesday = (date.getDay() - 3 + 7) % 7;
   date.setDate(date.getDate() - daysSinceWednesday);
@@ -633,7 +634,7 @@ export function upsertReservation(state, input, options = {}) {
   if (!event) errors.push("イベント日が見つかりません。");
   if (event && event.status === "休み") errors.push("休み日は予約入力対象外です。");
   if (event && !options.admin && !isReservationOpen(event, now)) {
-    errors.push("この日の予約入力は直前の日曜22:00から開始されます。");
+    errors.push("この日の予約入力は対象週の水曜22:00から開始されます。");
   }
   if (!isReservationFilled(payload)) errors.push("保存する予約内容がありません。");
   if (errors.length) return { state, ok: false, errors, warnings: [] };
@@ -697,18 +698,40 @@ export function deleteReservation(state, reservationId, now = new Date()) {
 
 export function getReservationSetting(state, eventId) {
   const setting = (state.reservation_settings || []).find((item) => String(item.event_date_id) === String(eventId));
+  const instanceCount = Number(setting?.instance_count) === 2 ? 2 : 1;
+  const defaultNormalCapacity = instanceCount * RESERVATION_REQUEST_NORMAL_CAPACITY_PER_INSTANCE;
   return {
     id: setting?.id || `request_setting_${eventId}`,
     event_date_id: eventId,
-    instance_count: Number(setting?.instance_count) === 2 ? 2 : 1,
+    instance_count: instanceCount,
+    normal_capacity_front: instanceCount === 2 ? toRequestCapacity(setting?.normal_capacity_front, defaultNormalCapacity) : defaultNormalCapacity,
+    normal_capacity_back: instanceCount === 2 ? toRequestCapacity(setting?.normal_capacity_back, defaultNormalCapacity) : defaultNormalCapacity,
     created_at: setting?.created_at || null,
     updated_at: setting?.updated_at || null,
   };
 }
 
+function toRequestCapacity(value, fallback) {
+  const count = Number(value);
+  if (!Number.isFinite(count)) return fallback;
+  return Math.max(0, Math.min(99, Math.floor(count)));
+}
+
+export function getReservationRequestNormalCapacity(state, eventId, timeSlot) {
+  const setting = getReservationSetting(state, eventId);
+  if (timeSlot === TIME_SLOTS[0]) return setting.normal_capacity_front;
+  if (timeSlot === TIME_SLOTS[1]) return setting.normal_capacity_back;
+  return 0;
+}
+
+export function getReservationRequestIvanCapacity(state, eventId, timeSlot) {
+  if (!TIME_SLOTS.includes(timeSlot)) return 0;
+  return getReservationSetting(state, eventId).instance_count * RESERVATION_REQUEST_IVAN_CAPACITY_PER_INSTANCE;
+}
+
 export function getReservationRequestCapacity(state, eventId, timeSlot) {
   if (!TIME_SLOTS.includes(timeSlot)) return 0;
-  return getReservationSetting(state, eventId).instance_count * 10;
+  return getReservationRequestNormalCapacity(state, eventId, timeSlot) + getReservationRequestIvanCapacity(state, eventId, timeSlot);
 }
 
 export function getReservationRequestTotalCapacity(state, eventId) {
@@ -719,21 +742,24 @@ export function getReservationRequestAcceptanceStatus(state, eventId) {
   const total = getReservationRequestsForEvent(state, eventId).length;
   const reservationCapacity = getReservationRequestTotalCapacity(state, eventId);
   const holdCapacity = RESERVATION_REQUEST_HOLD_LIMIT;
+  const buckets = getReservationRequestBuckets(state, eventId);
+  const holdUsed = TIME_SLOTS.reduce((sum, slot) => {
+    return sum + buckets[slot].normal.hold.length + buckets[slot].ivan.hold.length;
+  }, 0);
   const capacity = reservationCapacity + holdCapacity;
-  const holdUsed = Math.max(0, total - reservationCapacity);
   return {
     total,
     reservationCapacity,
     holdCapacity,
     holdUsed,
     capacity,
-    remaining: Math.max(0, capacity - total),
-    closed: capacity > 0 && total >= capacity,
+    remaining: Math.max(0, holdCapacity - holdUsed),
+    closed: holdCapacity > 0 && holdUsed >= holdCapacity,
   };
 }
 
 export function getAllowedRequestTimeSlots(state, eventId) {
-  return getReservationSetting(state, eventId).instance_count === 2 ? REQUEST_TIME_SLOTS : TIME_SLOTS;
+  return TIME_SLOTS;
 }
 
 export function upsertReservationSetting(state, input, now = new Date()) {
@@ -745,6 +771,9 @@ export function upsertReservationSetting(state, input, now = new Date()) {
   const errors = [];
   if (!event) errors.push("イベント日が見つかりません。");
   const instanceCount = Number(input.instance_count) === 2 ? 2 : 1;
+  const defaultNormalCapacity = instanceCount * RESERVATION_REQUEST_NORMAL_CAPACITY_PER_INSTANCE;
+  const normalCapacityFront = instanceCount === 2 ? toRequestCapacity(input.normal_capacity_front, defaultNormalCapacity) : defaultNormalCapacity;
+  const normalCapacityBack = instanceCount === 2 ? toRequestCapacity(input.normal_capacity_back, defaultNormalCapacity) : defaultNormalCapacity;
   if (errors.length) return { state, ok: false, errors };
   const existing = draft.reservation_settings.find((item) => String(item.event_date_id) === String(eventId));
   const before = existing ? clone(existing) : null;
@@ -755,6 +784,8 @@ export function upsertReservationSetting(state, input, now = new Date()) {
       created_at: stamp,
     }),
     instance_count: instanceCount,
+    normal_capacity_front: normalCapacityFront,
+    normal_capacity_back: normalCapacityBack,
     updated_at: stamp,
   };
   if (existing) Object.assign(existing, after);
@@ -785,7 +816,7 @@ export function normalizeReservationRequest(state, input) {
     event_date_id: eventId,
     host_user_id: input.host_user_id || "",
     desired_time_slot: desiredTimeSlot,
-    no_same_time_double_booking: input.no_same_time_double_booking === true || input.no_same_time_double_booking === "on" || input.no_same_time_double_booking === "true",
+    no_same_time_double_booking: false,
     princess_name: (input.princess_name || "").trim(),
     attribute: ATTRIBUTES.includes(input.attribute) ? input.attribute : "要確認",
     ivan_name: (input.ivan_name || "").trim(),
@@ -830,6 +861,16 @@ export function upsertReservationRequest(state, input, options = {}) {
   const acceptance = getReservationRequestAcceptanceStatus(draft, payload.event_date_id);
   if (!existing && !options.admin && acceptance.closed) {
     errors.push("受付上限に達しているため、予約受付は締め切られています。");
+  }
+  const sameHostSameTimeRequest = draft.reservation_requests.find((request) => {
+    return !request.is_deleted
+      && String(request.id) !== String(payload.id)
+      && String(request.event_date_id) === String(payload.event_date_id)
+      && String(request.host_user_id) === String(payload.host_user_id)
+      && request.desired_time_slot === payload.desired_time_slot;
+  });
+  if (payload.host_user_id && sameHostSameTimeRequest) {
+    errors.push("同じホストは前半1枠、後半1枠までです。");
   }
   if (!payload.host_user_id) errors.push("担当ホストを選択してください。");
   if (!isReservationRequestFilled(payload)) errors.push("予約内容を入力してください。");
@@ -887,28 +928,48 @@ export function setReservationRequestPlacement(state, requestId, placementStatus
 
 export function getReservationRequestBuckets(state, eventId) {
   const result = {
-    [TIME_SLOTS[0]]: { reserved: [], hold: [], capacity: getReservationRequestCapacity(state, eventId, TIME_SLOTS[0]) },
-    [TIME_SLOTS[1]]: { reserved: [], hold: [], capacity: getReservationRequestCapacity(state, eventId, TIME_SLOTS[1]) },
+    [TIME_SLOTS[0]]: createReservationRequestBucket(state, eventId, TIME_SLOTS[0]),
+    [TIME_SLOTS[1]]: createReservationRequestBucket(state, eventId, TIME_SLOTS[1]),
     flexible: [],
   };
   for (const request of getReservationRequestsForEvent(state, eventId)) {
-    if (request.desired_time_slot === "どちらでも可") {
-      result.flexible.push(request);
-      continue;
-    }
     const bucket = result[request.desired_time_slot] || result[TIME_SLOTS[0]];
+    const seatBucket = isReservationRequestIvan(request) ? bucket.ivan : bucket.normal;
     if (request.placement_status === "reserved") {
       bucket.reserved.push(request);
+      seatBucket.reserved.push(request);
       continue;
     }
     if (request.placement_status === "hold") {
       bucket.hold.push(request);
+      seatBucket.hold.push(request);
       continue;
     }
-    if (bucket.reserved.length < bucket.capacity) bucket.reserved.push(request);
-    else bucket.hold.push(request);
+    if (seatBucket.reserved.length < seatBucket.capacity) {
+      bucket.reserved.push(request);
+      seatBucket.reserved.push(request);
+    } else {
+      bucket.hold.push(request);
+      seatBucket.hold.push(request);
+    }
   }
   return result;
+}
+
+function createReservationRequestBucket(state, eventId, timeSlot) {
+  const normalCapacity = getReservationRequestNormalCapacity(state, eventId, timeSlot);
+  const ivanCapacity = getReservationRequestIvanCapacity(state, eventId, timeSlot);
+  return {
+    reserved: [],
+    hold: [],
+    capacity: normalCapacity + ivanCapacity,
+    normal: { reserved: [], hold: [], capacity: normalCapacity },
+    ivan: { reserved: [], hold: [], capacity: ivanCapacity },
+  };
+}
+
+export function isReservationRequestIvan(request) {
+  return Boolean((request?.ivan_name || "").trim());
 }
 
 export function getDrinkPlansForEvent(state, eventId, includeDeleted = false) {
