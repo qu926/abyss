@@ -1210,12 +1210,30 @@ textarea:focus {
 }
 
 .request-setting-form {
-  grid-template-columns: minmax(260px, 1.4fr) minmax(240px, 1fr) auto;
-  align-items: end;
+  grid-template-columns: minmax(230px, 0.65fr) minmax(0, 1.85fr);
+  align-items: stretch;
 }
 
 .reservation-request-form {
   grid-template-columns: 1fr;
+}
+
+.request-setting-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.9fr) minmax(140px, auto);
+  align-items: end;
+  gap: 12px;
+}
+
+.request-setting-capacities {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.request-setting-controls .primary-button {
+  min-height: 48px;
+  white-space: nowrap;
 }
 
 .request-setting-copy {
@@ -1526,6 +1544,8 @@ textarea:focus {
   .bulk-attendance-row,
   .drink-plan-form,
   .request-setting-form,
+  .request-setting-controls,
+  .request-setting-capacities,
   .reservation-request-form,
   .request-editing-notice,
   .request-form-row,

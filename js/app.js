@@ -889,22 +889,26 @@ function renderReservationRequestSettingForm(eventId, setting) {
         <strong>運営用: インスタンス数設定</strong>
         <span>1インスタンスは通常席8件・アイバン2件、2インスタンスはアイバン4件です。2インスタンス時のみ通常席MAXを変更できます。</span>
       </div>
-      <label>
-        <span>インスタンス数</span>
-        <select name="instance_count">
-          ${option("1", "1インスタンス（通常8 + アイバン2）", setting.instance_count === 1)}
-          ${option("2", "2インスタンス（通常席MAX指定 + アイバン4）", setting.instance_count === 2)}
-        </select>
-      </label>
-      <label>
-        <span>前半 通常席MAX</span>
-        <input name="normal_capacity_front" type="number" min="0" max="99" step="1" value="${setting.instance_count === 2 ? setting.normal_capacity_front : 16}">
-      </label>
-      <label>
-        <span>後半 通常席MAX</span>
-        <input name="normal_capacity_back" type="number" min="0" max="99" step="1" value="${setting.instance_count === 2 ? setting.normal_capacity_back : 16}">
-      </label>
-      <button class="primary-button" type="submit">設定を反映</button>
+      <div class="request-setting-controls">
+        <label class="request-instance-field">
+          <span>インスタンス数</span>
+          <select name="instance_count">
+            ${option("1", "1インスタンス（通常8 + アイバン2）", setting.instance_count === 1)}
+            ${option("2", "2インスタンス（通常席MAX指定 + アイバン4）", setting.instance_count === 2)}
+          </select>
+        </label>
+        <div class="request-setting-capacities">
+          <label>
+            <span>前半 通常席MAX</span>
+            <input name="normal_capacity_front" type="number" min="0" max="99" step="1" value="${setting.instance_count === 2 ? setting.normal_capacity_front : 16}">
+          </label>
+          <label>
+            <span>後半 通常席MAX</span>
+            <input name="normal_capacity_back" type="number" min="0" max="99" step="1" value="${setting.instance_count === 2 ? setting.normal_capacity_back : 16}">
+          </label>
+        </div>
+        <button class="primary-button" type="submit">設定を反映</button>
+      </div>
     </form>
   `;
 }
