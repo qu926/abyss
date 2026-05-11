@@ -111,7 +111,7 @@ const ADMIN_TABS = new Set([
   "histories",
   "data",
 ]);
-const RESERVATION_TABS = new Set(["grid", "requests", "towers"]);
+const RESERVATION_TABS = new Set(["requests", "towers"]);
 
 let state = loadState();
 let syncStatus = getInitialSyncStatus();
@@ -129,7 +129,7 @@ let view = {
   archiveEventId: "",
   attendanceUserId: "",
   staffAttendanceMemberId: "",
-  reservationTab: "grid",
+  reservationTab: "requests",
   dashboardDetailType: "",
   dashboardDetailKey: "",
   editingUserId: "",
@@ -790,9 +790,9 @@ function getCombinedAttendanceListItems(status) {
 
 function renderReservationPage(adminMode) {
   const event = findEvent(state, view.eventId);
-  const gridLocked = event && !adminMode && !isReservationOpen(event);
   const requestLocked = event && !adminMode && !isReservationRequestOpen(event);
   const isHoliday = event?.status === "休み";
+  if (view.reservationTab === "grid") view.reservationTab = "requests";
   return `
     <section class="panel page-panel">
       <div class="panel-heading wide-heading">
@@ -802,7 +802,6 @@ function renderReservationPage(adminMode) {
         </div>
         <div class="toolbar compact">
           <div class="tab-switch" aria-label="予約表示切替">
-            ${reservationTabButton("grid", "予約入力")}
             ${reservationTabButton("requests", "受付方式（仮）")}
             ${reservationTabButton("towers", "タワー一覧")}
           </div>
@@ -812,15 +811,10 @@ function renderReservationPage(adminMode) {
           ${statusPill(event?.status || "未設定")}
         </div>
       </div>
-      ${view.reservationTab === "towers" ? renderTowerScheduleOverview() : view.reservationTab === "requests" ? `
+      ${view.reservationTab === "towers" ? renderTowerScheduleOverview() : `
         ${renderReservationRequestOpenNotice(event, adminMode)}
         ${isHoliday ? `<div class="notice muted">この日は休みです。勤怠・予約入力対象外です。</div>` : ""}
         ${renderReservationRequestPrototype(event?.id || "", { adminMode, locked: Boolean(requestLocked || isHoliday) })}
-      ` : `
-        ${renderReservationOpenNotice(event, adminMode)}
-        ${isHoliday ? `<div class="notice muted">この日は休みです。勤怠・予約入力対象外です。</div>` : ""}
-        ${renderDrinkPlans(event?.id || "", { locked: Boolean(isHoliday || (event && isEventArchived(event))) })}
-        ${renderReservationGrid(view.eventId, { adminMode, locked: Boolean(gridLocked || isHoliday) })}
       `}
     </section>
   `;
