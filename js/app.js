@@ -948,20 +948,22 @@ function renderReservationRequestSummaryV2(buckets, setting, acceptance) {
         <span class="capacity ${acceptance.holdUsed >= acceptance.holdCapacity ? "full" : "ok"}">${acceptance.holdUsed >= acceptance.holdCapacity ? "満枠" : `残り${acceptance.holdCapacity - acceptance.holdUsed}`}</span>
       </div>
       ${TIME_SLOTS.map((slot) => {
-        const used = acceptance.holdUsedByTimeSlot?.[slot] || 0;
-        const cap = acceptance.holdCapacityByTimeSlot?.[slot] || 0;
-        const level = used > cap ? "over" : used === cap ? "full" : "ok";
-        return `<div class="mini-panel"><span>${REQUEST_TIME_SLOT_LABELS[slot]} 保留枠</span><strong>${used} / ${cap}</strong><em>${used ? "予約枠超過分" : "まだ予約枠内"}</em><span class="capacity ${level}">${level === "over" ? "超過" : level === "full" ? "満枠" : `残り${cap - used}`}</span></div>`;
-      }).join("")}
-      ${TIME_SLOTS.map((slot) => {
         const bucket = buckets[slot];
         return [
-          renderRequestCapacityPanel(`${REQUEST_TIME_SLOT_LABELS[slot]} 通常席`, bucket.normal),
-          renderRequestCapacityPanel(`${REQUEST_TIME_SLOT_LABELS[slot]} アイバン枠`, bucket.ivan),
+          renderRequestCapacityPanel(`${slot} 通常席`, bucket.normal),
+          renderRequestCapacityPanel(`${slot} アイバン枠`, bucket.ivan),
         ].join("");
       }).join("")}
+      ${TIME_SLOTS.map((slot) => renderRequestHoldCapacityPanel(slot, acceptance)).join("")}
     </div>
   `;
+}
+
+function renderRequestHoldCapacityPanel(slot, acceptance) {
+  const used = acceptance.holdUsedByTimeSlot?.[slot] || 0;
+  const cap = acceptance.holdCapacityByTimeSlot?.[slot] || 0;
+  const level = used > cap ? "over" : used === cap ? "full" : "ok";
+  return `<div class="mini-panel"><span>${escapeHtml(slot)} 保留枠</span><strong>${used} / ${cap}</strong><em>${used ? "予約枠超過分" : "まだ予約枠内"}</em><span class="capacity ${level}">${level === "over" ? "超過" : level === "full" ? "満枠" : `残り${cap - used}`}</span></div>`;
 }
 
 function renderRequestCapacityPanel(label, bucket) {
@@ -975,8 +977,8 @@ function renderReservationRequestBucketsV2(buckets, adminMode) {
       ${TIME_SLOTS.map((slot) => {
         const bucket = buckets[slot];
         return `
-          ${renderRequestSeatBucket(`${REQUEST_TIME_SLOT_LABELS[slot]} 通常席`, bucket.normal, adminMode)}
-          ${renderRequestSeatBucket(`${REQUEST_TIME_SLOT_LABELS[slot]} アイバン枠`, bucket.ivan, adminMode)}
+          ${renderRequestSeatBucket(`${slot} 通常席`, bucket.normal, adminMode)}
+          ${renderRequestSeatBucket(`${slot} アイバン枠`, bucket.ivan, adminMode)}
         `;
       }).join("")}
     </div>
