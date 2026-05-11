@@ -637,7 +637,7 @@ test('reservation request prototype supports seat capacities, host limits, and m
   assert.equal(thirdIvan.ok, true);
 });
 
-test('reservation request acceptance closes after five hold slots for hosts', () => {
+test('reservation request acceptance enforces three hold slots per time slot for hosts', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
   const hosts = ensureActiveHosts(state, 30);
@@ -646,7 +646,7 @@ test('reservation request acceptance closes after five hold slots for hosts', ()
   state = setting.state;
 
   const requests = [
-    ...Array.from({ length: 21 }, (_, i) => ({
+    ...Array.from({ length: 19 }, (_, i) => ({
       host_user_id: hosts[i].id,
       desired_time_slot: TIME_SLOTS[0],
       princess_name: `Front Normal ${i + 1}`,
@@ -681,26 +681,41 @@ test('reservation request acceptance closes after five hold slots for hosts', ()
   }
 
   assert.deepEqual(getReservationRequestAcceptanceStatus(state, event.id), {
-    total: 45,
+    total: 43,
     reservationCapacity: 40,
-    holdCapacity: 5,
-    holdUsed: 5,
-    capacity: 45,
-    remaining: 0,
-    closed: true,
+    holdCapacity: 6,
+    holdCapacityByTimeSlot: {
+      [TIME_SLOTS[0]]: 3,
+      [TIME_SLOTS[1]]: 3,
+    },
+    holdUsed: 3,
+    holdUsedByTimeSlot: {
+      [TIME_SLOTS[0]]: 3,
+      [TIME_SLOTS[1]]: 0,
+    },
+    capacity: 46,
+    remaining: 3,
+    closed: false,
   });
 
-  const hostAttempt = upsertReservationRequest(
+  const frontHostAttempt = upsertReservationRequest(
     state,
-    reservationRequestDraft(event.id, { princess_name: 'Too late' }),
+    reservationRequestDraft(event.id, { host_user_id: hosts[25].id, princess_name: 'Too late front' }),
     { admin: false, now: event.reservation_open_at },
   );
-  assert.equal(hostAttempt.ok, false);
-  assert.equal(hostAttempt.errors.includes('受付上限に達しているため、予約受付は締め切られています。'), true);
+  assert.equal(frontHostAttempt.ok, false);
+  assert.equal(frontHostAttempt.errors.some((error) => error.includes('保留枠が上限に達しています')), true);
+
+  const backHostAttempt = upsertReservationRequest(
+    state,
+    reservationRequestDraft(event.id, { host_user_id: hosts[25].id, desired_time_slot: TIME_SLOTS[1], princess_name: 'Back hold allowed' }),
+    { admin: false, now: event.reservation_open_at },
+  );
+  assert.equal(backHostAttempt.ok, true);
 
   const adminAttempt = upsertReservationRequest(
     state,
-    reservationRequestDraft(event.id, { host_user_id: hosts[25].id, princess_name: 'Admin override' }),
+    reservationRequestDraft(event.id, { host_user_id: hosts[26].id, princess_name: 'Admin override' }),
     { admin: true, now: '2026-05-03T14:00:00.000Z' },
   );
   assert.equal(adminAttempt.ok, true);

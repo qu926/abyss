@@ -942,11 +942,17 @@ function renderReservationRequestSummaryV2(buckets, setting, acceptance) {
         <span class="capacity ${acceptance.closed ? "full" : "ok"}">${acceptance.closed ? "締切" : "受付中"}</span>
       </div>
       <div class="mini-panel">
-        <span>保留枠</span>
+        <span>保留枠合計</span>
         <strong>${acceptance.holdUsed} / ${acceptance.holdCapacity}</strong>
-        <em>${acceptance.holdUsed ? "予約枠超過分" : "まだ予約枠内"}</em>
+        <em>前半3 / 後半3</em>
         <span class="capacity ${acceptance.holdUsed >= acceptance.holdCapacity ? "full" : "ok"}">${acceptance.holdUsed >= acceptance.holdCapacity ? "満枠" : `残り${acceptance.holdCapacity - acceptance.holdUsed}`}</span>
       </div>
+      ${TIME_SLOTS.map((slot) => {
+        const used = acceptance.holdUsedByTimeSlot?.[slot] || 0;
+        const cap = acceptance.holdCapacityByTimeSlot?.[slot] || 0;
+        const level = used > cap ? "over" : used === cap ? "full" : "ok";
+        return `<div class="mini-panel"><span>${REQUEST_TIME_SLOT_LABELS[slot]} 保留枠</span><strong>${used} / ${cap}</strong><em>${used ? "予約枠超過分" : "まだ予約枠内"}</em><span class="capacity ${level}">${level === "over" ? "超過" : level === "full" ? "満枠" : `残り${cap - used}`}</span></div>`;
+      }).join("")}
       ${TIME_SLOTS.map((slot) => {
         const bucket = buckets[slot];
         return [

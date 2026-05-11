@@ -32,7 +32,7 @@ export const DRINK_LIMITS = {
   green: { label: "グリーン", limit: 10 },
 };
 export const DRINK_PLAN_TYPES = Object.entries(DRINK_LIMITS).map(([key, value]) => ({ key, label: value.label }));
-export const RESERVATION_REQUEST_HOLD_LIMIT = 5;
+export const RESERVATION_REQUEST_HOLD_LIMIT_PER_TIME_SLOT = 3;
 export const RESERVATION_REQUEST_NORMAL_CAPACITY_PER_INSTANCE = 8;
 export const RESERVATION_REQUEST_IVAN_CAPACITY_PER_INSTANCE = 2;
 
@@ -741,20 +741,29 @@ export function getReservationRequestTotalCapacity(state, eventId) {
 export function getReservationRequestAcceptanceStatus(state, eventId) {
   const total = getReservationRequestsForEvent(state, eventId).length;
   const reservationCapacity = getReservationRequestTotalCapacity(state, eventId);
-  const holdCapacity = RESERVATION_REQUEST_HOLD_LIMIT;
   const buckets = getReservationRequestBuckets(state, eventId);
+  const holdCapacityByTimeSlot = Object.fromEntries(TIME_SLOTS.map((slot) => [slot, RESERVATION_REQUEST_HOLD_LIMIT_PER_TIME_SLOT]));
+  const holdUsedByTimeSlot = Object.fromEntries(TIME_SLOTS.map((slot) => {
+    const bucket = buckets[slot];
+    return [slot, bucket.normal.hold.length + bucket.ivan.hold.length];
+  }));
   const holdUsed = TIME_SLOTS.reduce((sum, slot) => {
-    return sum + buckets[slot].normal.hold.length + buckets[slot].ivan.hold.length;
+    return sum + holdUsedByTimeSlot[slot];
   }, 0);
+  const holdCapacity = TIME_SLOTS.length * RESERVATION_REQUEST_HOLD_LIMIT_PER_TIME_SLOT;
   const capacity = reservationCapacity + holdCapacity;
   return {
     total,
     reservationCapacity,
     holdCapacity,
+    holdCapacityByTimeSlot,
     holdUsed,
+    holdUsedByTimeSlot,
     capacity,
-    remaining: Math.max(0, holdCapacity - holdUsed),
-    closed: holdCapacity > 0 && holdUsed >= holdCapacity,
+    remaining: TIME_SLOTS.reduce((sum, slot) => {
+      return sum + Math.max(0, holdCapacityByTimeSlot[slot] - holdUsedByTimeSlot[slot]);
+    }, 0),
+    closed: TIME_SLOTS.every((slot) => holdCapacityByTimeSlot[slot] > 0 && holdUsedByTimeSlot[slot] >= holdCapacityByTimeSlot[slot]),
   };
 }
 
@@ -861,6 +870,17 @@ export function upsertReservationRequest(state, input, options = {}) {
   const acceptance = getReservationRequestAcceptanceStatus(draft, payload.event_date_id);
   if (!existing && !options.admin && acceptance.closed) {
     errors.push("受付上限に達しているため、予約受付は締め切られています。");
+  }
+  if (!existing && !options.admin && payload.desired_time_slot) {
+    const buckets = getReservationRequestBuckets(draft, payload.event_date_id);
+    const targetBucket = buckets[payload.desired_time_slot] || buckets[TIME_SLOTS[0]];
+    const targetSeatBucket = isReservationRequestIvan(payload) ? targetBucket.ivan : targetBucket.normal;
+    const slotHoldUsed = targetBucket.normal.hold.length + targetBucket.ivan.hold.length;
+    const wouldUseHold = targetSeatBucket.reserved.length >= targetSeatBucket.capacity;
+    if (wouldUseHold && slotHoldUsed >= RESERVATION_REQUEST_HOLD_LIMIT_PER_TIME_SLOT) {
+      const label = REQUEST_TIME_SLOT_LABELS[payload.desired_time_slot] || payload.desired_time_slot;
+      errors.push(`${label}の保留枠が上限に達しています。`);
+    }
   }
   const sameHostSameTimeRequest = draft.reservation_requests.find((request) => {
     return !request.is_deleted
