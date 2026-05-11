@@ -136,6 +136,7 @@ let view = {
   editingStaffMemberId: "",
   editingVacationId: "",
   editingEventId: "",
+  editingReservationRequestId: "",
 };
 
 view.eventId = getDefaultEventId();
@@ -485,6 +486,9 @@ function render() {
   if (!findUser(state, view.attendanceUserId)) view.attendanceUserId = getActiveUsers(state)[0]?.id || "";
   const selectedStaffMember = findStaffMember(state, view.staffAttendanceMemberId);
   if (!selectedStaffMember || selectedStaffMember.is_active === false) view.staffAttendanceMemberId = getActiveStaffMembers(state)[0]?.id || "";
+  if (view.editingReservationRequestId && !(state.reservation_requests || []).some((request) => request.id === view.editingReservationRequestId && !request.is_deleted)) {
+    view.editingReservationRequestId = "";
+  }
   saveViewToLocation();
 
   root.innerHTML = `
@@ -857,6 +861,9 @@ function renderReservationRequestPrototype(eventId, { adminMode = false, locked 
   const buckets = getReservationRequestBuckets(state, eventId);
   const acceptance = getReservationRequestAcceptanceStatus(state, eventId);
   const requestLocked = locked || (!adminMode && acceptance.closed);
+  const editingRequest = adminMode && view.editingReservationRequestId
+    ? requests.find((request) => request.id === view.editingReservationRequestId)
+    : null;
   return `
     <section class="request-panel">
       <div class="section-title">
@@ -866,7 +873,7 @@ function renderReservationRequestPrototype(eventId, { adminMode = false, locked 
       <p class="plan-note">ホストは席を選ばず、受付順に予約を登録します。運営があとから予約枠・保留枠・インスタンスへ振り分けるための仮画面です。</p>
       ${acceptance.closed ? `<div class="notice muted">受付上限 ${acceptance.capacity}件（予約枠${acceptance.reservationCapacity} + 保留枠${acceptance.holdCapacity}）に達しています。ホスト側の新規受付は締切です。</div>` : ""}
       ${adminMode ? renderReservationRequestSettingForm(eventId, setting) : ""}
-      ${renderReservationRequestForm(eventId, setting, requestLocked)}
+      ${renderReservationRequestForm(eventId, setting, requestLocked, editingRequest)}
       ${renderReservationRequestSummaryV2(buckets, setting, acceptance)}
       ${renderReservationRequestBucketsV2(buckets, adminMode)}
       ${renderReservationRequestList(requests, adminMode, locked)}
@@ -902,31 +909,49 @@ function renderReservationRequestSettingForm(eventId, setting) {
   `;
 }
 
-function renderReservationRequestForm(eventId, setting, locked) {
+function renderReservationRequestForm(eventId, setting, locked, editingRequest = null) {
   const allowedSlots = TIME_SLOTS;
+  const editing = editingRequest || {};
+  const isEditing = Boolean(editingRequest);
+  const users = getActiveUsers(state);
+  const editingUser = editing.host_user_id ? findUser(state, editing.host_user_id) : null;
+  const hostOptions = editingUser && !users.some((user) => user.id === editingUser.id)
+    ? [...users, editingUser]
+    : users;
+  const desiredSlot = editing.desired_time_slot || allowedSlots[0];
+  const attribute = editing.attribute || "リピ";
+  const ivanAttribute = editing.ivan_attribute || "リピ";
   return `
     <form class="reservation-request-form" data-action="save-reservation-request">
+      ${isEditing ? `
+        <div class="request-editing-notice">
+          <strong>受付を編集中</strong>
+          <span>${escapeHtml(findUser(state, editing.host_user_id)?.display_name || "未選択")} / ${escapeHtml(REQUEST_TIME_SLOT_LABELS[editing.desired_time_slot] || editing.desired_time_slot || "")} / ${formatHistoryDateTime(editing.created_at)}</span>
+          <button class="ghost-button" data-action="new-reservation-request" type="button">新規入力に戻る</button>
+        </div>
+      ` : ""}
+      <input type="hidden" name="id" value="${escapeAttr(editing.id || "")}">
       <input type="hidden" name="event_date_id" value="${escapeAttr(eventId)}">
       <div class="request-form-row request-host-row">
-        <label><span>担当ホスト</span><select name="host_user_id" ${locked ? "disabled" : ""}><option value="">未選択</option>${getActiveUsers(state).map((user) => option(user.id, user.display_name, false)).join("")}</select></label>
-        <label><span>希望回</span><select name="desired_time_slot" ${locked ? "disabled" : ""}>${allowedSlots.map((slot) => option(slot, REQUEST_TIME_SLOT_LABELS[slot] || slot, false)).join("")}</select></label>
+        <label><span>担当ホスト</span><select name="host_user_id" ${locked ? "disabled" : ""}><option value="">未選択</option>${hostOptions.map((user) => option(user.id, user.display_name, user.id === editing.host_user_id)).join("")}</select></label>
+        <label><span>希望回</span><select name="desired_time_slot" ${locked ? "disabled" : ""}>${allowedSlots.map((slot) => option(slot, REQUEST_TIME_SLOT_LABELS[slot] || slot, slot === desiredSlot)).join("")}</select></label>
       </div>
       <div class="request-form-row request-guest-row">
-        <label><span>姫名</span><input name="princess_name" ${locked ? "disabled" : ""}></label>
-        <label><span>属性</span><select name="attribute" ${locked ? "disabled" : ""}>${ATTRIBUTES.map((attribute) => option(attribute, attribute, attribute === "リピ")).join("")}</select></label>
-        <label><span>アイバン名</span><input name="ivan_name" ${locked ? "disabled" : ""}></label>
-        <label><span>アイバン属性</span><select name="ivan_attribute" ${locked ? "disabled" : ""}>${ATTRIBUTES.map((attribute) => option(attribute, attribute, attribute === "リピ")).join("")}</select></label>
+        <label><span>姫名</span><input name="princess_name" value="${escapeAttr(editing.princess_name || "")}" ${locked ? "disabled" : ""}></label>
+        <label><span>属性</span><select name="attribute" ${locked ? "disabled" : ""}>${ATTRIBUTES.map((item) => option(item, item, item === attribute)).join("")}</select></label>
+        <label><span>アイバン名</span><input name="ivan_name" value="${escapeAttr(editing.ivan_name || "")}" ${locked ? "disabled" : ""}></label>
+        <label><span>アイバン属性</span><select name="ivan_attribute" ${locked ? "disabled" : ""}>${ATTRIBUTES.map((item) => option(item, item, item === ivanAttribute)).join("")}</select></label>
       </div>
       <div class="request-form-row request-drink-row">
-        <label><span>P</span><input name="purple_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
-        <label><span>R</span><input name="red_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
-        <label><span>B</span><input name="blue_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
-        <label><span>G</span><input name="green_count" type="number" min="0" step="1" value="0" ${locked ? "disabled" : ""}></label>
-        <label><span>タワー</span><select name="tower_count" ${locked ? "disabled" : ""}>${option("0", "なし", true)}${option("1", "あり", false)}</select></label>
+        <label><span>P</span><input name="purple_count" type="number" min="0" step="1" value="${Number(editing.purple_count) || 0}" ${locked ? "disabled" : ""}></label>
+        <label><span>R</span><input name="red_count" type="number" min="0" step="1" value="${Number(editing.red_count) || 0}" ${locked ? "disabled" : ""}></label>
+        <label><span>B</span><input name="blue_count" type="number" min="0" step="1" value="${Number(editing.blue_count) || 0}" ${locked ? "disabled" : ""}></label>
+        <label><span>G</span><input name="green_count" type="number" min="0" step="1" value="${Number(editing.green_count) || 0}" ${locked ? "disabled" : ""}></label>
+        <label><span>タワー</span><select name="tower_count" ${locked ? "disabled" : ""}>${option("0", "なし", !Number(editing.tower_count))}${option("1", "あり", Boolean(Number(editing.tower_count)))}</select></label>
       </div>
       <div class="request-form-row request-submit-row">
-        <label><span>メモ</span><input name="memo" placeholder="確認事項、交渉メモなど" ${locked ? "disabled" : ""}></label>
-        <button class="primary-button" type="submit" ${locked ? "disabled" : ""}>受付に登録</button>
+        <label><span>メモ</span><input name="memo" value="${escapeAttr(editing.memo || "")}" placeholder="確認事項、交渉メモなど" ${locked ? "disabled" : ""}></label>
+        <button class="primary-button" type="submit" ${locked ? "disabled" : ""}>${isEditing ? "受付を更新" : "受付に登録"}</button>
       </div>
     </form>
   `;
@@ -1021,9 +1046,11 @@ function renderRequestCardV2(request, adminMode) {
 function renderRequestPlacementActionsV2(request) {
   return `
     <div class="request-actions">
+      <button class="icon-button" data-action="edit-reservation-request" data-request-id="${escapeAttr(request.id)}" type="button">編集</button>
       <button class="icon-button" data-action="request-placement" data-request-id="${escapeAttr(request.id)}" data-placement-status="auto" type="button">自動</button>
       <button class="icon-button save" data-action="request-placement" data-request-id="${escapeAttr(request.id)}" data-placement-status="reserved" type="button">予約枠扱い</button>
       <button class="icon-button danger" data-action="request-placement" data-request-id="${escapeAttr(request.id)}" data-placement-status="hold" type="button">保留扱い</button>
+      <button class="icon-button danger" data-action="delete-reservation-request" data-request-id="${escapeAttr(request.id)}" type="button">削除</button>
     </div>
   `;
 }
@@ -1143,7 +1170,10 @@ function renderReservationRequestList(requests, adminMode, locked) {
               <td>${escapeHtml(formatReservationGuestMeta(request))}</td>
               <td>${escapeHtml([formatRequestDrinks(request), request.memo].filter(Boolean).join(" / "))}</td>
               <td>${escapeHtml(formatPlacementStatus(request.placement_status))}</td>
-              <td><button class="icon-button danger" data-action="delete-reservation-request" data-request-id="${escapeAttr(request.id)}" type="button" ${locked && !adminMode ? "disabled" : ""}>削除</button></td>
+              <td>
+                ${adminMode ? `<button class="icon-button" data-action="edit-reservation-request" data-request-id="${escapeAttr(request.id)}" type="button">編集</button>` : ""}
+                <button class="icon-button danger" data-action="delete-reservation-request" data-request-id="${escapeAttr(request.id)}" type="button" ${locked && !adminMode ? "disabled" : ""}>削除</button>
+              </td>
             </tr>
           `).join("")}
         </tbody>
@@ -2360,6 +2390,17 @@ function handleClick(event) {
   }
   if (action === "save-reservation") saveReservationFromRow(button);
   if (action === "delete-reservation") deleteReservationFromRow(button);
+  if (action === "edit-reservation-request") {
+    view.editingReservationRequestId = button.dataset.requestId || "";
+    render();
+    window.setTimeout(() => root.querySelector(".reservation-request-form")?.scrollIntoView({ block: "start", behavior: "smooth" }), 0);
+    return;
+  }
+  if (action === "new-reservation-request") {
+    view.editingReservationRequestId = "";
+    render();
+    return;
+  }
   if (action === "delete-reservation-request") deleteReservationRequestFromButton(button);
   if (action === "request-placement") setReservationRequestPlacementFromButton(button);
   if (action === "delete-drink-plan") deleteDrinkPlanFromButton(button);
@@ -2485,7 +2526,10 @@ function handleSubmit(event) {
       no_same_time_double_booking: false,
     };
     const result = upsertReservationRequest(state, payload, { admin: view.page === "admin" });
-    if (result.ok) form.reset();
+    if (result.ok) {
+      form.reset();
+      view.editingReservationRequestId = "";
+    }
     applyResult(result, "予約受付に登録しました。");
     return;
   }
@@ -2644,6 +2688,7 @@ function handleChange(event) {
   const eventSelect = event.target.closest("[data-role='event-select']");
   if (eventSelect) {
     view.eventId = eventSelect.value;
+    view.editingReservationRequestId = "";
     render();
     return;
   }
@@ -2783,6 +2828,7 @@ function deleteReservationRequestFromButton(button) {
   const ok = window.confirm("この予約受付を削除します。続行しますか？");
   if (!ok) return;
   const result = deleteReservationRequest(state, requestId);
+  if (result.ok && view.editingReservationRequestId === requestId) view.editingReservationRequestId = "";
   applyResult(result, "予約受付を削除しました。");
 }
 

@@ -1240,6 +1240,28 @@ textarea:focus {
   gap: 12px;
 }
 
+.request-editing-notice {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(80, 162, 255, 0.58);
+  border-radius: var(--radius);
+  background: rgba(26, 97, 177, 0.18);
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+.request-editing-notice strong {
+  color: var(--blue);
+}
+
+.request-editing-notice span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .request-host-row {
   grid-template-columns: minmax(220px, 1.5fr) minmax(170px, 0.85fr) minmax(170px, 0.85fr);
 }
@@ -1505,6 +1527,7 @@ textarea:focus {
   .drink-plan-form,
   .request-setting-form,
   .reservation-request-form,
+  .request-editing-notice,
   .request-form-row,
   .request-summary-grid,
   .request-bucket-grid,
