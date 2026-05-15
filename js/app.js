@@ -947,10 +947,10 @@ function renderReservationRequestForm(eventId, setting, locked, editingRequest =
         <label><span>アイバン属性</span><select name="ivan_attribute" ${locked ? "disabled" : ""}>${ATTRIBUTES.map((item) => option(item, item, item === ivanAttribute)).join("")}</select></label>
       </div>
       <div class="request-form-row request-drink-row">
-        <label><span>P</span><input name="purple_count" type="number" min="0" step="1" value="${Number(editing.purple_count) || 0}" ${locked ? "disabled" : ""}></label>
-        <label><span>R</span><input name="red_count" type="number" min="0" step="1" value="${Number(editing.red_count) || 0}" ${locked ? "disabled" : ""}></label>
-        <label><span>B</span><input name="blue_count" type="number" min="0" step="1" value="${Number(editing.blue_count) || 0}" ${locked ? "disabled" : ""}></label>
-        <label><span>G</span><input name="green_count" type="number" min="0" step="1" value="${Number(editing.green_count) || 0}" ${locked ? "disabled" : ""}></label>
+        <label><span>パープル</span><input name="purple_count" type="number" min="0" step="1" value="${Number(editing.purple_count) || 0}" ${locked ? "disabled" : ""}></label>
+        <label><span>レッド</span><input name="red_count" type="number" min="0" step="1" value="${Number(editing.red_count) || 0}" ${locked ? "disabled" : ""}></label>
+        <label><span>ブルー</span><input name="blue_count" type="number" min="0" step="1" value="${Number(editing.blue_count) || 0}" ${locked ? "disabled" : ""}></label>
+        <label><span>グリーン</span><input name="green_count" type="number" min="0" step="1" value="${Number(editing.green_count) || 0}" ${locked ? "disabled" : ""}></label>
         <label><span>タワー</span><select name="tower_count" ${locked ? "disabled" : ""}>${option("0", "なし", !Number(editing.tower_count))}${option("1", "あり", Boolean(Number(editing.tower_count)))}</select></label>
       </div>
       <div class="request-form-row request-submit-row">
@@ -1365,7 +1365,7 @@ function renderReservationSection(eventId, timeSlot, seatType, adminMode, locked
       <div class="reservation-grid ${noIvanColumn ? "no-ivan-column" : ""}" role="table">
         <div class="grid-head" role="row">
           <span>組数</span><span>担当ホスト</span><span>姫名</span><span>属性</span>${noIvanColumn ? "" : "<span>アイバン名</span><span>属性</span>"}
-          <span>P</span><span>R</span><span>B</span><span>G</span><span>タワー</span><span>メモ</span><span>操作</span>
+          <span>パープル</span><span>レッド</span><span>ブルー</span><span>グリーン</span><span>タワー</span><span>メモ</span><span>操作</span>
         </div>
         ${rows}
       </div>
@@ -1404,10 +1404,10 @@ function renderReservationRow(reservation, context) {
       ${attributeCell("attribute", context.noIvanColumn ? "属性" : "姫属性", data.attribute, disabled)}
       ${context.noIvanColumn ? "" : textCell("ivan_name", "アイバン名", data.ivan_name, disabled)}
       ${context.noIvanColumn ? "" : attributeCell("ivan_attribute", "アイバン属性", data.ivan_attribute || data.attribute, disabled)}
-      ${numberCell("purple_count", "P", data.purple_count, disabled)}
-      ${numberCell("red_count", "R", data.red_count, disabled)}
-      ${numberCell("blue_count", "B", data.blue_count, disabled)}
-      ${numberCell("green_count", "G", data.green_count, disabled)}
+      ${numberCell("purple_count", "パープル", data.purple_count, disabled)}
+      ${numberCell("red_count", "レッド", data.red_count, disabled)}
+      ${numberCell("blue_count", "ブルー", data.blue_count, disabled)}
+      ${numberCell("green_count", "グリーン", data.green_count, disabled)}
       <label class="grid-cell" data-label="タワー">
         <select data-field="tower_count" ${disabled}>
           ${option("0", "なし", Number(data.tower_count) === 0)}

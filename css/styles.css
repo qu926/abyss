@@ -1106,18 +1106,18 @@ textarea:focus {
   display: grid;
   grid-template-columns:
     64px minmax(140px, 1.15fr) minmax(130px, 1fr) minmax(112px, 0.8fr)
-    minmax(130px, 1fr) minmax(112px, 0.8fr) 64px 64px 64px 64px minmax(92px, 0.7fr)
+    minmax(130px, 1fr) minmax(112px, 0.8fr) 88px 88px 88px 88px minmax(92px, 0.7fr)
     minmax(150px, 1.2fr) minmax(136px, 0.8fr);
-  min-width: 1290px;
+  min-width: 1390px;
 }
 
 .no-ivan-column .grid-head,
 .no-ivan-column .grid-row {
   grid-template-columns:
     64px minmax(140px, 1.15fr) minmax(130px, 1fr)
-    minmax(112px, 0.8fr) 64px 64px 64px 64px minmax(92px, 0.7fr)
+    minmax(112px, 0.8fr) 88px 88px 88px 88px minmax(92px, 0.7fr)
     minmax(150px, 1.2fr) minmax(136px, 0.8fr);
-  min-width: 1050px;
+  min-width: 1150px;
 }
 
 .grid-head {
