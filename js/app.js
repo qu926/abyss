@@ -1905,12 +1905,16 @@ function renderArchiveItem(event) {
   const isOpen = view.archiveEventId === event.id;
   const reservations = getReservationsForEvent(state, event.id);
   const deletedReservations = getReservationsForEvent(state, event.id, true).filter((reservation) => reservation.is_deleted);
+  const reservationRequests = getReservationRequestsForEvent(state, event.id);
+  const deletedReservationRequests = getReservationRequestsForEvent(state, event.id, { includeDeleted: true }).filter((request) => request.is_deleted);
+  const totalReservations = reservations.length + reservationRequests.length;
+  const totalDeleted = deletedReservations.length + deletedReservationRequests.length;
   return `
     <section class="archive-item ${isOpen ? "is-open" : ""}">
       <button class="archive-toggle" data-action="toggle-archive" data-event-id="${event.id}" type="button" aria-expanded="${isOpen}">
         <span>${formatDateLabel(event.event_date)}</span>
-        <strong>予約 ${reservations.length}件</strong>
-        <em>${deletedReservations.length ? `削除履歴 ${deletedReservations.length}件` : "削除履歴なし"}</em>
+        <strong>予約 ${totalReservations}件</strong>
+        <em>${totalDeleted ? `削除履歴 ${totalDeleted}件` : "削除履歴なし"}</em>
         ${statusPill(event.status)}
       </button>
       ${isOpen ? `
@@ -1927,11 +1931,15 @@ function renderArchiveItem(event) {
           </div>
           ${renderArchiveAttendance(event.id)}
           ${renderDrinkPlans(event.id, { locked: true })}
-          <div class="subsection">
-            <h3>予約アーカイブ</h3>
-            ${renderReservationGrid(event.id, { adminMode: true, locked: true })}
-          </div>
+          ${renderArchiveReservationRequests(event.id)}
+          ${reservations.length ? `
+            <div class="subsection">
+              <h3>旧予約グリッド履歴</h3>
+              ${renderReservationGrid(event.id, { adminMode: true, locked: true })}
+            </div>
+          ` : ""}
           ${renderDeletedReservations(deletedReservations)}
+          ${renderDeletedReservationRequests(deletedReservationRequests)}
         </div>
       ` : ""}
     </section>
@@ -1983,6 +1991,51 @@ function renderArchiveAttendanceList(items, emptyText) {
     .join("")}</ul>`;
 }
 
+function renderArchiveReservationRequests(eventId) {
+  const requests = getReservationRequestsForEvent(state, eventId);
+  const deletedRequests = getReservationRequestsForEvent(state, eventId, { includeDeleted: true }).filter((request) => request.is_deleted);
+  if (!requests.length && !deletedRequests.length) {
+    return `
+      <div class="subsection">
+        <h3>予約アーカイブ</h3>
+        <p class="empty">予約受付履歴はありません。</p>
+      </div>
+    `;
+  }
+  const buckets = getReservationRequestBuckets(state, eventId);
+  return `
+    <div class="subsection">
+      <h3>予約アーカイブ</h3>
+      ${requests.length ? `
+        ${renderReservationRequestBucketsV2(buckets, false)}
+        ${renderArchiveReservationRequestList(requests)}
+      ` : `<p class="empty">予約受付履歴はありません。</p>`}
+    </div>
+  `;
+}
+
+function renderArchiveReservationRequestList(requests) {
+  return `
+    <div class="table-wrap request-table-wrap">
+      <table class="data-table">
+        <thead><tr><th>受付</th><th>担当</th><th>希望</th><th>姫 / アイバン</th><th>内容</th><th>扱い</th></tr></thead>
+        <tbody>
+          ${requests.map((request, index) => `
+            <tr>
+              <td>#${String(index + 1).padStart(3, "0")}<br>${formatHistoryDateTime(request.created_at)}</td>
+              <td>${escapeHtml(findUser(state, request.host_user_id)?.display_name || "未選択")}</td>
+              <td>${escapeHtml(REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot)}</td>
+              <td>${escapeHtml(formatReservationGuestMeta(request))}</td>
+              <td>${escapeHtml([formatRequestDrinks(request), request.memo].filter(Boolean).join(" / "))}</td>
+              <td>${escapeHtml(formatPlacementStatus(request.placement_status))}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderDeletedReservations(deletedReservations) {
   if (!deletedReservations.length) return "";
   return `
@@ -1999,6 +2052,32 @@ function renderDeletedReservations(deletedReservations) {
                 <td>${escapeHtml(findUser(state, reservation.host_user_id)?.display_name || "未選択")}</td>
                 <td>${escapeHtml(formatReservationGuestMeta(reservation))}</td>
                 <td>${escapeHtml(reservation.memo || "")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderDeletedReservationRequests(deletedRequests) {
+  if (!deletedRequests.length) return "";
+  return `
+    <div class="subsection">
+      <h3>削除済み予約受付</h3>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>削除日時</th><th>受付</th><th>担当ホスト</th><th>姫 / アイバン</th><th>内容</th><th>扱い</th></tr></thead>
+          <tbody>
+            ${deletedRequests.map((request, index) => `
+              <tr>
+                <td>${formatDateTime(request.deleted_at)}</td>
+                <td>#${String(index + 1).padStart(3, "0")} / ${escapeHtml(REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot)}</td>
+                <td>${escapeHtml(findUser(state, request.host_user_id)?.display_name || "未選択")}</td>
+                <td>${escapeHtml(formatReservationGuestMeta(request))}</td>
+                <td>${escapeHtml([formatRequestDrinks(request), request.memo].filter(Boolean).join(" / "))}</td>
+                <td>${escapeHtml(formatPlacementStatus(request.placement_status))}</td>
               </tr>
             `).join("")}
           </tbody>
