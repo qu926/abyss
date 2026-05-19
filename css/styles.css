@@ -594,6 +594,19 @@ textarea:focus {
   gap: 14px;
 }
 
+.dashboard-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.dashboard-attendance-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dashboard-operations-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .attendance-list-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -705,16 +718,11 @@ textarea:focus {
 .dashboard-detail-panel {
   display: grid;
   gap: 12px;
-  margin-top: 14px;
+  margin-top: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(4, 8, 14, 0.74);
   padding: 14px;
-}
-
-.mini-panel .dashboard-detail-panel {
-  max-height: min(430px, 54vh);
-  overflow: auto;
 }
 
 .detail-list {
@@ -723,6 +731,10 @@ textarea:focus {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.dashboard-detail-panel .detail-list {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .detail-list li {

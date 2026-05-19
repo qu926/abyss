@@ -1573,31 +1573,33 @@ function renderAdminDashboard() {
         </div>
         ${statusPill(event?.status || "未設定")}
       </div>
-      <div class="dashboard-grid">
-        <div class="mini-panel">
-          <h3>ホスト勤怠</h3>
-          ${renderAttendanceSummaryCards(view.eventId, { detailType: "hostAttendance" })}
-          ${renderDashboardDetailFor("hostAttendance")}
+      <div class="dashboard-stack">
+        <div class="dashboard-grid dashboard-attendance-grid">
+          <div class="mini-panel">
+            <h3>ホスト勤怠</h3>
+            ${renderAttendanceSummaryCards(view.eventId, { detailType: "hostAttendance" })}
+          </div>
+          <div class="mini-panel">
+            <h3>内勤勤怠</h3>
+            ${renderStaffAttendanceSummaryCards(view.eventId, { detailType: "staffAttendance" })}
+          </div>
         </div>
-        <div class="mini-panel">
-          <h3>内勤勤怠</h3>
-          ${renderStaffAttendanceSummaryCards(view.eventId, { detailType: "staffAttendance" })}
-          ${renderDashboardDetailFor("staffAttendance")}
+        ${renderDashboardDetailGroup(["hostAttendance", "staffAttendance"])}
+        <div class="dashboard-grid dashboard-operations-grid">
+          <div class="mini-panel">
+            <h3>予約枠</h3>
+            ${renderSeatStatusList(view.eventId, { detailType: "seat" })}
+          </div>
+          <div class="mini-panel">
+            <h3>シャンパン・タワー</h3>
+            ${renderDrinkStatusList(view.eventId, { detailType: "drink" })}
+          </div>
+          <div class="mini-panel">
+            <h3>確認が必要</h3>
+            ${issues.length ? `<ul class="issue-list">${issues.map((issue) => `<li class="${issue.level}">⚠ ${escapeHtml(issue.text)}</li>`).join("")}</ul>` : `<p class="empty">要確認項目はありません。</p>`}
+          </div>
         </div>
-        <div class="mini-panel">
-          <h3>予約枠</h3>
-          ${renderSeatStatusList(view.eventId, { detailType: "seat" })}
-          ${renderDashboardDetailFor("seat")}
-        </div>
-        <div class="mini-panel">
-          <h3>シャンパン・タワー</h3>
-          ${renderDrinkStatusList(view.eventId, { detailType: "drink" })}
-          ${renderDashboardDetailFor("drink")}
-        </div>
-        <div class="mini-panel">
-          <h3>確認が必要</h3>
-          ${issues.length ? `<ul class="issue-list">${issues.map((issue) => `<li class="${issue.level}">⚠ ${escapeHtml(issue.text)}</li>`).join("")}</ul>` : `<p class="empty">要確認項目はありません。</p>`}
-        </div>
+        ${renderDashboardDetailGroup(["seat", "drink"])}
       </div>
     </section>
   `;
@@ -2279,8 +2281,8 @@ function renderDashboardDetail() {
   return "";
 }
 
-function renderDashboardDetailFor(type) {
-  return view.dashboardDetailType === type ? renderDashboardDetail() : "";
+function renderDashboardDetailGroup(types) {
+  return types.includes(view.dashboardDetailType) ? renderDashboardDetail() : "";
 }
 
 function renderHostAttendanceDetail(status) {
