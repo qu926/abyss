@@ -751,12 +751,18 @@ function renderHostAttendanceListPage() {
       <div class="attendance-list-grid">
         ${HOST_ATTENDANCE_LIST_STATUSES.map((status) => renderHostAttendanceListSection(status)).join("")}
       </div>
+      <div class="section-title attendance-list-subtitle">
+        <h3>内勤</h3>
+      </div>
+      <div class="attendance-list-grid">
+        ${[...STAFF_ATTENDANCE_STATUSES, "未入力"].map((status) => renderStaffAttendanceListSection(status)).join("")}
+      </div>
     </section>
   `;
 }
 
 function renderHostAttendanceListSection(status) {
-  const items = getCombinedAttendanceListItems(status);
+  const items = getHostAttendanceListItems(status);
   return `
     <section class="mini-panel attendance-list-section status-${status}">
       <div class="section-title">
@@ -768,28 +774,40 @@ function renderHostAttendanceListSection(status) {
   `;
 }
 
-function getCombinedAttendanceListItems(status) {
+function renderStaffAttendanceListSection(status) {
+  const items = getStaffAttendanceListItems(status);
+  return `
+    <section class="mini-panel attendance-list-section status-${status}">
+      <div class="section-title">
+        <h3>${escapeHtml(status)}</h3>
+        <span class="inline-pill muted">${items.length}人</span>
+      </div>
+      ${renderDetailList(items, `${status}の内勤はいません。`)}
+    </section>
+  `;
+}
+
+function getHostAttendanceListItems(status) {
   if (status === "未入力") {
-    return [
-      ...getMissingUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: `ホスト / ${user.role || "ホスト"}` })),
-      ...getMissingStaffMembers(state, view.eventId).map((member) => ({ title: member.display_name, meta: `内勤 / ${member.staff_type || "内勤"}` })),
-    ];
+    return getMissingUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: `ホスト / ${user.role || "ホスト"}` }));
   }
   if (status === "長期休暇") {
     return getVacationExemptUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: `ホスト / ${user.role || "ホスト"} / 長期休暇中` }));
   }
-  const hostItems = getActiveUsers(state)
+  return getActiveUsers(state)
     .map((user) => ({ user, entry: getAttendanceEntry(state, view.eventId, user.id) }))
     .filter(({ entry }) => entry?.status === status)
     .map(({ user }) => ({ title: user.display_name, meta: `ホスト / ${user.role || "ホスト"}` }));
-  if (status === "体入") return hostItems;
-  return [
-    ...hostItems,
-    ...getActiveStaffMembers(state)
-      .map((member) => ({ member, entry: getStaffAttendanceEntry(state, view.eventId, member.id) }))
-      .filter(({ entry }) => entry?.status === status)
-      .map(({ member }) => ({ title: member.display_name, meta: `内勤 / ${member.staff_type || "内勤"}` })),
-  ];
+}
+
+function getStaffAttendanceListItems(status) {
+  if (status === "未入力") {
+    return getMissingStaffMembers(state, view.eventId).map((member) => ({ title: member.display_name, meta: `内勤 / ${member.staff_type || "内勤"}` }));
+  }
+  return getActiveStaffMembers(state)
+    .map((member) => ({ member, entry: getStaffAttendanceEntry(state, view.eventId, member.id) }))
+    .filter(({ entry }) => entry?.status === status)
+    .map(({ member }) => ({ title: member.display_name, meta: `内勤 / ${member.staff_type || "内勤"}` }));
 }
 
 function renderReservationPage(adminMode) {
