@@ -792,11 +792,15 @@ function getHostAttendanceListItems(status) {
     return getMissingUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: `ホスト / ${user.role || "ホスト"}` }));
   }
   if (status === "長期休暇") {
-    return getVacationExemptUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: `ホスト / ${user.role || "ホスト"} / 長期休暇中` }));
+    return getVacationExemptUsers(state, view.eventId).map((user) => {
+      const entry = getAttendanceEntry(state, view.eventId, user.id);
+      return { title: user.display_name, meta: [`ホスト / ${user.role || "ホスト"}`, "長期休暇中", entry ? `${entry.status}入力あり` : ""].filter(Boolean).join(" / ") };
+    });
   }
+  const event = findEvent(state, view.eventId);
   return getActiveUsers(state)
     .map((user) => ({ user, entry: getAttendanceEntry(state, view.eventId, user.id) }))
-    .filter(({ entry }) => entry?.status === status)
+    .filter(({ user, entry }) => entry?.status === status && !(event && isOnVacation(state, user.id, event.event_date)))
     .map(({ user }) => ({ title: user.display_name, meta: `ホスト / ${user.role || "ホスト"}` }));
 }
 
@@ -2297,11 +2301,15 @@ function getHostAttendanceDetailItems(status) {
     return getMissingUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: user.role || "ホスト" }));
   }
   if (status === "長期休暇") {
-    return getVacationExemptUsers(state, view.eventId).map((user) => ({ title: user.display_name, meta: "長期休暇中" }));
+    return getVacationExemptUsers(state, view.eventId).map((user) => {
+      const entry = getAttendanceEntry(state, view.eventId, user.id);
+      return { title: user.display_name, meta: ["長期休暇中", entry ? `${entry.status}入力あり` : ""].filter(Boolean).join(" / ") };
+    });
   }
+  const event = findEvent(state, view.eventId);
   return getActiveUsers(state)
     .map((user) => ({ user, entry: getAttendanceEntry(state, view.eventId, user.id) }))
-    .filter(({ entry }) => entry?.status === status)
+    .filter(({ user, entry }) => entry?.status === status && !(event && isOnVacation(state, user.id, event.event_date)))
     .map(({ user, entry }) => ({ title: user.display_name, meta: [user.role, entry.memo].filter(Boolean).join(" / ") }));
 }
 

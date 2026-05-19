@@ -286,7 +286,23 @@ test('attendance upsert is immutable and summary tracks missing, present, absent
   assert.equal(summary[ATTENDANCE_STATUSES[1]], 1);
   assert.equal(summary[ATTENDANCE_STATUSES[2]], 1);
   assert.equal(summary[ATTENDANCE_STATUSES[3]], 0);
+  assert.equal(summary.長期休暇, 1);
   assert.equal(getMissingUsers(undecidedResult.state, event.id).length, activeUsers.length - 4);
+
+  const vacationAttendanceResult = upsertAttendance(
+    undecidedResult.state,
+    {
+      event_date_id: event.id,
+      user_id: vacationUser.id,
+      status: ATTENDANCE_STATUSES[0],
+      memo: 'vacation override',
+    },
+    new Date('2026-05-02T10:15:00+09:00'),
+  );
+  assert.equal(vacationAttendanceResult.ok, true);
+  const vacationSummary = getAttendanceSummary(vacationAttendanceResult.state, event.id);
+  assert.equal(vacationSummary[ATTENDANCE_STATUSES[0]], 1);
+  assert.equal(vacationSummary.長期休暇, 1);
 
   const restResult = upsertAttendance(
     undecidedResult.state,
