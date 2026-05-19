@@ -821,7 +821,9 @@ test('drink plans can be entered before reservation open and are tracked separat
     beforeOpen,
   );
   assert.equal(created.ok, true);
+  assert.ok(created.plan.id);
   assert.equal(getDrinkPlansForEvent(created.state, event.id).length, 1);
+  assert.equal(mergeSharedState(state, created.state).drink_plans.length, 1);
   assert.deepEqual(getDrinkPlanTotals(created.state, event.id), {
     tower: 1,
     purple: 0,

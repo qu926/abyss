@@ -807,7 +807,7 @@ function renderReservationPage(adminMode) {
         <div class="toolbar compact">
           <div class="tab-switch" aria-label="予約表示切替">
             ${reservationTabButton("requests", "受付方式（仮）")}
-            ${reservationTabButton("towers", "タワー一覧")}
+            ${reservationTabButton("towers", "酒類一覧")}
           </div>
           <select data-role="event-select" aria-label="対象日">
             ${renderEventOptions(view.eventId)}
@@ -1270,7 +1270,7 @@ function renderTowerScheduleOverview() {
   return `
     <section class="tower-overview">
       <div class="section-title">
-        <h3>この先のタワー予約状況</h3>
+        <h3>この先のシャンパン・タワー申請状況</h3>
         <span class="capacity ok">空き日をまとめて確認</span>
       </div>
       <div class="tower-summary-list">
@@ -1281,32 +1281,44 @@ function renderTowerScheduleOverview() {
 }
 
 function renderTowerScheduleItem(event) {
-  const actualTowerCount = getDrinkTotals(state, event.id).tower || 0;
-  const plannedTowers = getDrinkPlansForEvent(state, event.id).filter((plan) => plan.item_type === "tower");
-  const plannedTowerCount = plannedTowers.reduce((total, plan) => total + (Number(plan.count) || 0), 0);
-  const total = actualTowerCount + plannedTowerCount;
-  const towerLimit = DRINK_LIMITS.tower.limit;
-  const { level } = getLimitStatus(total, towerLimit);
-  const reservations = getReservationsForEvent(state, event.id).filter((reservation) => Number(reservation.tower_count) > 0);
+  const actualTotals = getDrinkTotals(state, event.id);
+  const planTotals = getDrinkPlanTotals(state, event.id);
+  const drinkStatuses = DRINK_PLAN_TYPES.map((item) => {
+    const actual = actualTotals[item.key] || 0;
+    const planned = planTotals[item.key] || 0;
+    const total = actual + planned;
+    const limit = DRINK_LIMITS[item.key].limit;
+    return { ...item, actual, planned, total, limit, ...getLimitStatus(total, limit) };
+  });
+  const level = drinkStatuses.some((item) => item.level === "over")
+    ? "over"
+    : drinkStatuses.some((item) => item.level === "full")
+      ? "full"
+      : "ok";
+  const activeDrinkTotal = drinkStatuses.reduce((sum, item) => sum + item.total, 0);
+  const totalLimit = drinkStatuses.reduce((sum, item) => sum + item.limit, 0);
+  const reservations = getReservationsForEvent(state, event.id).filter((reservation) => {
+    return DRINK_PLAN_TYPES.some((item) => Number(reservation[item.key === "tower" ? "tower_count" : `${item.key}_count`]) > 0);
+  });
+  const plans = getDrinkPlansForEvent(state, event.id);
   return `
     <article class="tower-summary-item ${level}">
       <div class="tower-summary-main">
         <div>
-          <p class="eyebrow">Tower</p>
+          <p class="eyebrow">Drinks</p>
           <h3>${formatDateLabel(event.event_date)}</h3>
         </div>
-        <span class="capacity ${level}">${total} / ${towerLimit} ${total === 0 ? "空き" : total <= towerLimit ? "予定あり" : `超過 +${total - towerLimit}`}</span>
+        <span class="capacity ${level}">${activeDrinkTotal} / ${totalLimit} ${activeDrinkTotal === 0 ? "空き" : level === "over" ? "上限超過あり" : level === "full" ? "上限到達あり" : "申請あり"}</span>
       </div>
       <div class="tower-counts">
-        <span>実予約 <strong>${actualTowerCount}</strong></span>
-        <span>事前申請 <strong>${plannedTowerCount}</strong></span>
+        ${drinkStatuses.map((item) => `<span class="${item.level}">${item.label} <strong>${item.total} / ${item.limit}</strong><em>実${item.actual} + 申${item.planned}</em></span>`).join("")}
       </div>
-      ${reservations.length || plannedTowers.length ? `
+      ${reservations.length || plans.length ? `
         <ul class="tower-detail-list">
           ${reservations.map((reservation) => renderTowerReservationDetail(reservation)).join("")}
-          ${plannedTowers.map((plan) => renderTowerPlanDetail(plan)).join("")}
+          ${plans.map((plan) => renderTowerPlanDetail(plan)).join("")}
         </ul>
-      ` : `<p class="empty">タワー予定なし</p>`}
+      ` : `<p class="empty">シャンパン・タワー申請なし</p>`}
     </article>
   `;
 }
@@ -1315,14 +1327,23 @@ function renderTowerReservationDetail(reservation) {
   const hostName = getReservationPersonName(reservation.host_user_id);
   const slot = `${getTimeSlotLabel(reservation.time_slot)} ${reservation.seat_type} ${reservation.group_no}`;
   const guest = formatReservationGuestMeta(reservation);
+  const drinks = formatReservationDrinkBreakdown(reservation);
   const memo = reservation.memo ? ` / ${reservation.memo}` : "";
-  return `<li><span class="inline-pill active">実予約</span><strong>${escapeHtml(slot)}</strong><em>${escapeHtml([hostName, guest].filter(Boolean).join(" / "))}${escapeHtml(memo)}</em></li>`;
+  return `<li><span class="inline-pill active">実予約</span><strong>${escapeHtml(slot)}</strong><em>${escapeHtml([hostName, guest, drinks].filter(Boolean).join(" / "))}${escapeHtml(memo)}</em></li>`;
+}
+
+function formatReservationDrinkBreakdown(reservation) {
+  return DRINK_PLAN_TYPES.map((item) => {
+    const count = Number(reservation[item.key === "tower" ? "tower_count" : `${item.key}_count`]) || 0;
+    return count ? `${item.label}${count}` : "";
+  }).filter(Boolean).join(" / ");
 }
 
 function renderTowerPlanDetail(plan) {
   const hostName = getReservationPersonName(plan.host_user_id);
+  const item = DRINK_LIMITS[plan.item_type];
   const memo = plan.memo ? ` / ${plan.memo}` : "";
-  return `<li><span class="inline-pill muted">事前申請</span><strong>${escapeHtml(getTimeSlotLabel(plan.time_slot))}</strong><em>${escapeHtml(hostName)} / ${Number(plan.count) || 0}本${escapeHtml(memo)}</em></li>`;
+  return `<li><span class="inline-pill muted">事前申請</span><strong>${escapeHtml(getTimeSlotLabel(plan.time_slot))}</strong><em>${escapeHtml(hostName)} / ${escapeHtml(item?.label || plan.item_type)} ${Number(plan.count) || 0}本${escapeHtml(memo)}</em></li>`;
 }
 
 function renderReservationGrid(eventId, { adminMode = false, locked = false } = {}) {

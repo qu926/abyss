@@ -1039,15 +1039,16 @@ export function upsertDrinkPlan(state, input, now = new Date()) {
 
   const existing = payload.id ? draft.drink_plans.find((plan) => String(plan.id) === String(payload.id) && !plan.is_deleted) : null;
   const before = existing ? clone(existing) : null;
+  const planId = existing?.id || payload.id || createId("plan");
   const after = {
     ...(existing || {
-      id: createId("plan"),
       event_date_id: payload.event_date_id,
       created_at: stamp,
       deleted_at: null,
       is_deleted: false,
     }),
     ...payload,
+    id: planId,
     updated_at: stamp,
   };
   if (existing) Object.assign(existing, after);
