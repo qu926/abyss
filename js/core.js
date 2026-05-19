@@ -25,11 +25,11 @@ export const SLOT_LIMITS = {
 };
 
 export const DRINK_LIMITS = {
-  tower: { label: "タワー", limit: 1 },
-  purple: { label: "パープル", limit: 3 },
-  red: { label: "レッド", limit: 5 },
-  blue: { label: "ブルー", limit: 5 },
-  green: { label: "グリーン", limit: 10 },
+  tower: { label: "タワー", limit: 2 },
+  purple: { label: "パープル", limit: 6 },
+  red: { label: "レッド", limit: 10 },
+  blue: { label: "ブルー", limit: 10 },
+  green: { label: "グリーン", limit: 20 },
 };
 export const DRINK_PLAN_TYPES = Object.entries(DRINK_LIMITS).map(([key, value]) => ({ key, label: value.label }));
 export const RESERVATION_REQUEST_HOLD_LIMIT_PER_TIME_SLOT = 3;
@@ -325,6 +325,10 @@ export function findUser(state, userId) {
 
 export function findStaffMember(state, staffMemberId) {
   return (state.staff_members || []).find((member) => member.id === staffMemberId) || null;
+}
+
+function isStaffReservationPerson(state, personId) {
+  return Boolean(personId && findStaffMember(state, personId));
 }
 
 export function isOnVacation(state, userId, eventDate) {
@@ -627,6 +631,10 @@ export function wasReservationChangedAfterEventCutoff(event, reservation) {
 export function upsertReservation(state, input, options = {}) {
   const draft = clone(state);
   const payload = normalizeReservation(input);
+  if (isStaffReservationPerson(draft, payload.host_user_id)) {
+    payload.attribute = "初回";
+    payload.ivan_attribute = "初回";
+  }
   const now = options.now ? new Date(options.now) : new Date();
   const stamp = now.toISOString();
   const event = findEvent(draft, payload.event_date_id);
@@ -820,6 +828,7 @@ export function normalizeReservationRequest(state, input) {
   const eventId = input.event_date_id;
   const allowedTimeSlots = getAllowedRequestTimeSlots(state, eventId);
   const desiredTimeSlot = allowedTimeSlots.includes(input.desired_time_slot) ? input.desired_time_slot : allowedTimeSlots[0];
+  const staffReservation = isStaffReservationPerson(state, input.host_user_id);
   return {
     id: input.id || null,
     event_date_id: eventId,
@@ -827,9 +836,9 @@ export function normalizeReservationRequest(state, input) {
     desired_time_slot: desiredTimeSlot,
     no_same_time_double_booking: false,
     princess_name: (input.princess_name || "").trim(),
-    attribute: ATTRIBUTES.includes(input.attribute) ? input.attribute : "要確認",
+    attribute: staffReservation ? "初回" : ATTRIBUTES.includes(input.attribute) ? input.attribute : "要確認",
     ivan_name: (input.ivan_name || "").trim(),
-    ivan_attribute: ATTRIBUTES.includes(input.ivan_attribute) ? input.ivan_attribute : "要確認",
+    ivan_attribute: staffReservation ? "初回" : ATTRIBUTES.includes(input.ivan_attribute) ? input.ivan_attribute : "要確認",
     purple_count: toCount(input.purple_count),
     red_count: toCount(input.red_count),
     blue_count: toCount(input.blue_count),
@@ -890,9 +899,9 @@ export function upsertReservationRequest(state, input, options = {}) {
       && request.desired_time_slot === payload.desired_time_slot;
   });
   if (payload.host_user_id && sameHostSameTimeRequest) {
-    errors.push("同じホストは前半1枠、後半1枠までです。");
+    errors.push("同じ担当は前半1枠、後半1枠までです。");
   }
-  if (!payload.host_user_id) errors.push("担当ホストを選択してください。");
+  if (!payload.host_user_id) errors.push("担当を選択してください。");
   if (!isReservationRequestFilled(payload)) errors.push("予約内容を入力してください。");
   if (errors.length) return { state, ok: false, errors };
 
@@ -1023,8 +1032,8 @@ export function upsertDrinkPlan(state, input, now = new Date()) {
   const event = findEvent(draft, payload.event_date_id);
   const errors = [];
   if (!event) errors.push("イベント日が見つかりません。");
-  if (event && event.status === "休み") errors.push("休み日は事前予定の対象外です。");
-  if (!payload.host_user_id) errors.push("担当ホストを選択してください。");
+  if (event && event.status === "休み") errors.push("休み日は事前申請の対象外です。");
+  if (!payload.host_user_id) errors.push("担当を選択してください。");
   if (!isDrinkPlanFilled(payload)) errors.push("予定内容を入力してください。");
   if (errors.length) return { state, ok: false, errors };
 
@@ -1043,7 +1052,7 @@ export function upsertDrinkPlan(state, input, now = new Date()) {
   };
   if (existing) Object.assign(existing, after);
   else draft.drink_plans.push(after);
-  pushHistory(draft, "drink_plan", after.id, before, after, stamp, before ? "事前予定を編集" : "事前予定を登録");
+  pushHistory(draft, "drink_plan", after.id, before, after, stamp, before ? "事前申請を編集" : "事前申請を登録");
   touch(draft, stamp);
   return { state: draft, ok: true, plan: after, errors: [] };
 }
@@ -1053,12 +1062,12 @@ export function deleteDrinkPlan(state, planId, now = new Date()) {
   draft.drink_plans ||= [];
   const stamp = new Date(now).toISOString();
   const plan = draft.drink_plans.find((item) => String(item.id) === String(planId) && !item.is_deleted);
-  if (!plan) return { state, ok: false, errors: ["削除対象の事前予定が見つかりません。"] };
+  if (!plan) return { state, ok: false, errors: ["削除対象の事前申請が見つかりません。"] };
   const before = clone(plan);
   plan.is_deleted = true;
   plan.deleted_at = stamp;
   plan.updated_at = stamp;
-  pushHistory(draft, "drink_plan", plan.id, before, clone(plan), stamp, "事前予定を削除");
+  pushHistory(draft, "drink_plan", plan.id, before, clone(plan), stamp, "事前申請を削除");
   touch(draft, stamp);
   return { state: draft, ok: true, errors: [] };
 }
@@ -1154,9 +1163,15 @@ export function getReservationWarnings(state, reservation) {
   const event = findEvent(state, reservation.event_date_id);
   if (!event) return warnings;
   const user = reservation.host_user_id ? findUser(state, reservation.host_user_id) : null;
+  const staffMember = reservation.host_user_id ? findStaffMember(state, reservation.host_user_id) : null;
   if (reservation.host_user_id) {
-    if (!user) {
-      warnings.push("担当ホストが見つかりません");
+    if (!user && !staffMember) {
+      warnings.push("担当が見つかりません");
+    } else if (staffMember) {
+      const attendance = getStaffAttendanceEntry(state, reservation.event_date_id, reservation.host_user_id);
+      if (!attendance) warnings.push("担当内勤が勤怠未入力です");
+      if (attendance?.status === "欠席") warnings.push("担当内勤が欠席です");
+      if (attendance?.status === "未定") warnings.push("担当内勤が未定です");
     } else if (isOnVacation(state, reservation.host_user_id, event.event_date)) {
       warnings.push("担当ホストが長期休暇中です");
     } else {

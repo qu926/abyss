@@ -445,6 +445,52 @@ test('internal staff attendance is managed separately from host attendance', () 
   assert.equal(restResult.ok, false);
 });
 
+test('internal staff can be assigned to reservations and are forced to first-time attributes', () => {
+  let state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const event = activeEvent(state);
+  const createdStaff = upsertStaffMember(
+    state,
+    {
+      display_name: '予約内勤',
+      kana: 'よやくないきん',
+      staff_type: '内勤',
+      is_active: true,
+      note: '',
+    },
+    new Date('2026-05-02T10:00:00+09:00'),
+  );
+  assert.equal(createdStaff.ok, true);
+  state = createdStaff.state;
+
+  const request = upsertReservationRequest(
+    state,
+    reservationRequestDraft(event.id, {
+      host_user_id: createdStaff.staffMember.id,
+      attribute: 'リピ',
+      ivan_name: 'Staff Ivan',
+      ivan_attribute: 'リピ',
+    }),
+    { admin: true, now: '2026-05-03T13:00:00.000Z' },
+  );
+  assert.equal(request.ok, true);
+  assert.equal(request.request.attribute, '初回');
+  assert.equal(request.request.ivan_attribute, '初回');
+  state = request.state;
+
+  const reservation = upsertReservation(
+    state,
+    reservationDraft(event.id, {
+      host_user_id: createdStaff.staffMember.id,
+      attribute: 'リピ',
+      ivan_attribute: 'リピ',
+    }),
+    { admin: true, now: '2026-05-03T13:05:00.000Z' },
+  );
+  assert.equal(reservation.ok, true);
+  assert.equal(reservation.reservation.attribute, '初回');
+  assert.equal(reservation.reservation.ivan_attribute, '初回');
+});
+
 test('reservation normalization validates slots, trims guest names, clamps counts, and detects empty drafts', () => {
   assert.deepEqual(getGroupLabels(SEAT_TYPES[0]), ['1', '2', '3', '4', '5', '6', '7', '8']);
   assert.deepEqual(getGroupLabels(SEAT_TYPES[1]), ['A1', 'A2']);
@@ -583,7 +629,7 @@ test('reservation request prototype supports seat capacities, host limits, and m
     { admin: true, now: '2026-05-03T13:01:00.000Z' },
   );
   assert.equal(duplicateSameHostSlot.ok, false);
-  assert.equal(duplicateSameHostSlot.errors.includes('同じホストは前半1枠、後半1枠までです。'), true);
+  assert.equal(duplicateSameHostSlot.errors.includes('同じ担当は前半1枠、後半1枠までです。'), true);
 
   state = buildDefaultState(new Date(2026, 4, 15, 12));
   hosts = ensureActiveHosts(state, 30);
@@ -883,8 +929,8 @@ test('reservation summaries enforce active seat and drink limits', () => {
     state,
     reservationDraft(event.id, {
       group_no: '1',
-      purple_count: 2,
-      red_count: 1,
+      purple_count: 4,
+      red_count: 5,
       tower_count: 1,
     }),
     { now, admin: true },
@@ -894,7 +940,7 @@ test('reservation summaries enforce active seat and drink limits', () => {
     reservationDraft(event.id, {
       group_no: '2',
       princess_name: 'Beth',
-      purple_count: 2,
+      purple_count: 3,
       green_count: 5,
     }),
     { now, admin: true },
@@ -906,7 +952,7 @@ test('reservation summaries enforce active seat and drink limits', () => {
       seat_type: SEAT_TYPES[1],
       group_no: 'A1',
       princess_name: 'Cara',
-      red_count: 5,
+      red_count: 6,
       blue_count: 1,
     }),
     { now, admin: true },
@@ -918,8 +964,8 @@ test('reservation summaries enforce active seat and drink limits', () => {
 
   assert.deepEqual(getDrinkTotals(third.state, event.id), {
     tower: 1,
-    purple: 4,
-    red: 6,
+    purple: 7,
+    red: 11,
     blue: 1,
     green: 5,
   });

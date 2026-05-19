@@ -870,9 +870,10 @@ function renderReservationRequestPrototype(eventId, { adminMode = false, locked 
         <h3>予約受付方式（仮）</h3>
         <span class="capacity ${acceptance.closed ? "full" : "ok"}">${setting.instance_count}インスタンス / 合計 ${acceptance.total} / ${acceptance.capacity}</span>
       </div>
-      <p class="plan-note">ホストは席を選ばず、受付順に予約を登録します。運営があとから予約枠・保留枠・インスタンスへ振り分けるための仮画面です。</p>
-      ${acceptance.closed ? `<div class="notice muted">受付上限 ${acceptance.capacity}件（予約枠${acceptance.reservationCapacity} + 保留枠${acceptance.holdCapacity}）に達しています。ホスト側の新規受付は締切です。</div>` : ""}
+      <p class="plan-note">担当者は席を選ばず、受付順に予約を登録します。運営があとから予約枠・保留枠・インスタンスへ振り分けるための仮画面です。内勤の予約は属性が初回に固定されます。</p>
+      ${acceptance.closed ? `<div class="notice muted">受付上限 ${acceptance.capacity}件（予約枠${acceptance.reservationCapacity} + 保留枠${acceptance.holdCapacity}）に達しています。新規受付は締切です。</div>` : ""}
       ${adminMode ? renderReservationRequestSettingForm(eventId, setting) : ""}
+      ${renderDrinkPlans(eventId, { locked })}
       ${renderReservationRequestForm(eventId, setting, requestLocked, editingRequest)}
       ${renderReservationRequestSummaryV2(buckets, setting, acceptance)}
       ${renderReservationRequestBucketsV2(buckets, adminMode)}
@@ -917,34 +918,31 @@ function renderReservationRequestForm(eventId, setting, locked, editingRequest =
   const allowedSlots = TIME_SLOTS;
   const editing = editingRequest || {};
   const isEditing = Boolean(editingRequest);
-  const users = getActiveUsers(state);
-  const editingUser = editing.host_user_id ? findUser(state, editing.host_user_id) : null;
-  const hostOptions = editingUser && !users.some((user) => user.id === editingUser.id)
-    ? [...users, editingUser]
-    : users;
+  const personOptions = getReservationPersonOptions(editing.host_user_id);
+  const staffReservation = isStaffReservationPersonId(editing.host_user_id);
   const desiredSlot = editing.desired_time_slot || allowedSlots[0];
-  const attribute = editing.attribute || "リピ";
-  const ivanAttribute = editing.ivan_attribute || "リピ";
+  const attribute = staffReservation ? "初回" : editing.attribute || "リピ";
+  const ivanAttribute = staffReservation ? "初回" : editing.ivan_attribute || "リピ";
   return `
     <form class="reservation-request-form" data-action="save-reservation-request">
       ${isEditing ? `
         <div class="request-editing-notice">
           <strong>受付を編集中</strong>
-          <span>${escapeHtml(findUser(state, editing.host_user_id)?.display_name || "未選択")} / ${escapeHtml(REQUEST_TIME_SLOT_LABELS[editing.desired_time_slot] || editing.desired_time_slot || "")} / ${formatHistoryDateTime(editing.created_at)}</span>
+          <span>${escapeHtml(getReservationPersonName(editing.host_user_id))} / ${escapeHtml(REQUEST_TIME_SLOT_LABELS[editing.desired_time_slot] || editing.desired_time_slot || "")} / ${formatHistoryDateTime(editing.created_at)}</span>
           <button class="ghost-button" data-action="new-reservation-request" type="button">新規入力に戻る</button>
         </div>
       ` : ""}
       <input type="hidden" name="id" value="${escapeAttr(editing.id || "")}">
       <input type="hidden" name="event_date_id" value="${escapeAttr(eventId)}">
       <div class="request-form-row request-host-row">
-        <label><span>担当ホスト</span><select name="host_user_id" ${locked ? "disabled" : ""}><option value="">未選択</option>${hostOptions.map((user) => option(user.id, user.display_name, user.id === editing.host_user_id)).join("")}</select></label>
+        <label><span>担当</span><select name="host_user_id" data-role="reservation-person-select" ${locked ? "disabled" : ""}><option value="">未選択</option>${personOptions.map((person) => option(person.id, person.label, person.id === editing.host_user_id)).join("")}</select></label>
         <label><span>希望回</span><select name="desired_time_slot" ${locked ? "disabled" : ""}>${allowedSlots.map((slot) => option(slot, REQUEST_TIME_SLOT_LABELS[slot] || slot, slot === desiredSlot)).join("")}</select></label>
       </div>
       <div class="request-form-row request-guest-row">
         <label><span>姫名</span><input name="princess_name" value="${escapeAttr(editing.princess_name || "")}" ${locked ? "disabled" : ""}></label>
-        <label><span>属性</span><select name="attribute" ${locked ? "disabled" : ""}>${ATTRIBUTES.map((item) => option(item, item, item === attribute)).join("")}</select></label>
+        <label><span>属性</span><select name="attribute" data-role="reservation-attribute-select" ${locked ? "disabled" : ""}>${renderAttributeOptions(attribute, staffReservation)}</select></label>
         <label><span>アイバン名</span><input name="ivan_name" value="${escapeAttr(editing.ivan_name || "")}" ${locked ? "disabled" : ""}></label>
-        <label><span>アイバン属性</span><select name="ivan_attribute" ${locked ? "disabled" : ""}>${ATTRIBUTES.map((item) => option(item, item, item === ivanAttribute)).join("")}</select></label>
+        <label><span>アイバン属性</span><select name="ivan_attribute" data-role="reservation-attribute-select" ${locked ? "disabled" : ""}>${renderAttributeOptions(ivanAttribute, staffReservation)}</select></label>
       </div>
       <div class="request-form-row request-drink-row">
         <label><span>パープル</span><input name="purple_count" type="number" min="0" step="1" value="${Number(editing.purple_count) || 0}" ${locked ? "disabled" : ""}></label>
@@ -1034,7 +1032,7 @@ function renderRequestCardsV2(requests, adminMode, emptyText) {
 }
 
 function renderRequestCardV2(request, adminMode) {
-  const hostName = findUser(state, request.host_user_id)?.display_name || "未選択";
+  const hostName = getReservationPersonName(request.host_user_id);
   const drinks = formatRequestDrinks(request);
   const seatType = isReservationRequestIvan(request) ? "アイバン枠" : "通常席";
   return `
@@ -1114,7 +1112,7 @@ function renderRequestCards(requests, adminMode, emptyText) {
 }
 
 function renderRequestCard(request, adminMode) {
-  const hostName = findUser(state, request.host_user_id)?.display_name || "未選択";
+  const hostName = getReservationPersonName(request.host_user_id);
   const drinks = formatRequestDrinks(request);
   const flexibleHint = getFlexibleRequestHint(request);
   return `
@@ -1169,7 +1167,7 @@ function renderReservationRequestList(requests, adminMode, locked) {
           ${requests.map((request, index) => `
             <tr>
               <td>#${String(index + 1).padStart(3, "0")}<br>${formatHistoryDateTime(request.created_at)}</td>
-              <td>${escapeHtml(findUser(state, request.host_user_id)?.display_name || "未選択")}</td>
+              <td>${escapeHtml(getReservationPersonName(request.host_user_id))}</td>
               <td>${escapeHtml(REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot)}</td>
               <td>${escapeHtml(formatReservationGuestMeta(request))}</td>
               <td>${escapeHtml([formatRequestDrinks(request), request.memo].filter(Boolean).join(" / "))}</td>
@@ -1210,18 +1208,18 @@ function renderDrinkPlans(eventId, { locked = false } = {}) {
   return `
     <section class="drink-plan-panel">
       <div class="section-title">
-        <h3>シャンパン・タワー事前予定</h3>
+        <h3>シャンパン・タワー事前申請</h3>
         <span class="capacity ok">予約解放前でも入力可</span>
       </div>
-      <p class="plan-note">タワーやシャンパンを先に把握するための予定欄です。実際の予約枠・上限集計とは別管理です。</p>
+      <p class="plan-note">タワーやシャンパンを先に把握するための申請欄です。上限は2インスタンス前提で表示しています。</p>
       <form class="drink-plan-form" data-action="save-drink-plan">
         <input type="hidden" name="event_date_id" value="${eventId}">
         <label><span>予定タイミング</span><select name="time_slot" ${locked ? "disabled" : ""}>${TIME_SLOTS.map((slot) => option(slot, getTimeSlotLabel(slot), false)).join("")}</select></label>
-        <label><span>担当ホスト</span><select name="host_user_id" ${locked ? "disabled" : ""}><option value="">未選択</option>${getActiveUsers(state).map((user) => option(user.id, user.display_name, false)).join("")}</select></label>
+        <label><span>担当</span><select name="host_user_id" data-role="reservation-person-select" ${locked ? "disabled" : ""}><option value="">未選択</option>${getReservationPersonOptions().map((person) => option(person.id, person.label, false)).join("")}</select></label>
         <label><span>種類</span><select name="item_type" ${locked ? "disabled" : ""}>${DRINK_PLAN_TYPES.map((item) => option(item.key, item.label, item.key === "tower")).join("")}</select></label>
         <label><span>本数</span><input name="count" type="number" min="1" step="1" value="1" ${locked ? "disabled" : ""}></label>
         <label class="span-2"><span>メモ</span><input name="memo" placeholder="姫名、予定内容、確認事項など" ${locked ? "disabled" : ""}></label>
-        <button class="primary-button" type="submit" ${locked ? "disabled" : ""}>予定を追加</button>
+        <button class="primary-button" type="submit" ${locked ? "disabled" : ""}>申請を追加</button>
       </form>
       ${renderDrinkPlanTotals(totals)}
       ${renderDrinkPlanList(plans, locked)}
@@ -1232,24 +1230,24 @@ function renderDrinkPlans(eventId, { locked = false } = {}) {
 function renderDrinkPlanTotals(totals) {
   return `
     <ul class="plan-total-list">
-      ${DRINK_PLAN_TYPES.map((item) => `<li><span>${item.label}</span><strong>${totals[item.key] || 0}</strong></li>`).join("")}
+      ${DRINK_PLAN_TYPES.map((item) => `<li><span>${item.label}</span><strong>${totals[item.key] || 0} / ${DRINK_LIMITS[item.key].limit}</strong></li>`).join("")}
     </ul>
   `;
 }
 
 function renderDrinkPlanList(plans, locked) {
-  if (!plans.length) return `<p class="empty">事前予定はまだありません。</p>`;
+  if (!plans.length) return `<p class="empty">事前申請はまだありません。</p>`;
   return `
     <div class="table-wrap plan-table-wrap">
       <table class="data-table plan-table">
-        <thead><tr><th>予定</th><th>担当ホスト</th><th>種類</th><th>本数</th><th>メモ</th><th>操作</th></tr></thead>
+        <thead><tr><th>申請</th><th>担当</th><th>種類</th><th>本数</th><th>メモ</th><th>操作</th></tr></thead>
         <tbody>
           ${plans.map((plan) => {
             const type = DRINK_PLAN_TYPES.find((item) => item.key === plan.item_type);
             return `
               <tr>
                 <td>${getTimeSlotLabel(plan.time_slot)}</td>
-                <td>${escapeHtml(findUser(state, plan.host_user_id)?.display_name || "未選択")}</td>
+                <td>${escapeHtml(getReservationPersonName(plan.host_user_id))}</td>
                 <td>${escapeHtml(type?.label || plan.item_type)}</td>
                 <td>${Number(plan.count) || 0}</td>
                 <td>${escapeHtml(plan.memo || "")}</td>
@@ -1300,7 +1298,7 @@ function renderTowerScheduleItem(event) {
       </div>
       <div class="tower-counts">
         <span>実予約 <strong>${actualTowerCount}</strong></span>
-        <span>事前予定 <strong>${plannedTowerCount}</strong></span>
+        <span>事前申請 <strong>${plannedTowerCount}</strong></span>
       </div>
       ${reservations.length || plannedTowers.length ? `
         <ul class="tower-detail-list">
@@ -1313,7 +1311,7 @@ function renderTowerScheduleItem(event) {
 }
 
 function renderTowerReservationDetail(reservation) {
-  const hostName = findUser(state, reservation.host_user_id)?.display_name || "未選択";
+  const hostName = getReservationPersonName(reservation.host_user_id);
   const slot = `${getTimeSlotLabel(reservation.time_slot)} ${reservation.seat_type} ${reservation.group_no}`;
   const guest = formatReservationGuestMeta(reservation);
   const memo = reservation.memo ? ` / ${reservation.memo}` : "";
@@ -1321,9 +1319,9 @@ function renderTowerReservationDetail(reservation) {
 }
 
 function renderTowerPlanDetail(plan) {
-  const hostName = findUser(state, plan.host_user_id)?.display_name || "未選択";
+  const hostName = getReservationPersonName(plan.host_user_id);
   const memo = plan.memo ? ` / ${plan.memo}` : "";
-  return `<li><span class="inline-pill muted">事前予定</span><strong>${escapeHtml(getTimeSlotLabel(plan.time_slot))}</strong><em>${escapeHtml(hostName)} / ${Number(plan.count) || 0}本${escapeHtml(memo)}</em></li>`;
+  return `<li><span class="inline-pill muted">事前申請</span><strong>${escapeHtml(getTimeSlotLabel(plan.time_slot))}</strong><em>${escapeHtml(hostName)} / ${Number(plan.count) || 0}本${escapeHtml(memo)}</em></li>`;
 }
 
 function renderReservationGrid(eventId, { adminMode = false, locked = false } = {}) {
@@ -1364,7 +1362,7 @@ function renderReservationSection(eventId, timeSlot, seatType, adminMode, locked
       </div>
       <div class="reservation-grid ${noIvanColumn ? "no-ivan-column" : ""}" role="table">
         <div class="grid-head" role="row">
-          <span>組数</span><span>担当ホスト</span><span>姫名</span><span>属性</span>${noIvanColumn ? "" : "<span>アイバン名</span><span>属性</span>"}
+          <span>組数</span><span>担当</span><span>姫名</span><span>属性</span>${noIvanColumn ? "" : "<span>アイバン名</span><span>属性</span>"}
           <span>パープル</span><span>レッド</span><span>ブルー</span><span>グリーン</span><span>タワー</span><span>メモ</span><span>操作</span>
         </div>
         ${rows}
@@ -1389,21 +1387,22 @@ function renderReservationRow(reservation, context) {
     tower_count: 0,
     memo: "",
   };
+  const staffReservation = isStaffReservationPersonId(data.host_user_id);
   const warnings = reservation ? getReservationWarnings(state, reservation) : [];
   const rowClass = warnings.length ? "has-warning" : "";
   return `
     <div class="grid-row slot-row ${rowClass}" data-reservation-id="${escapeAttr(data.id || "")}" data-reservation-updated-at="${escapeAttr(data.updated_at || "")}" data-event-id="${escapeAttr(context.eventId)}" data-time-slot="${escapeAttr(context.timeSlot)}" data-seat-type="${escapeAttr(context.seatType)}" data-group-no="${escapeAttr(context.groupNo)}" role="row">
       <div class="grid-cell fixed" data-label="組数"><strong>${context.groupNo}</strong></div>
-      <label class="grid-cell" data-label="担当ホスト">
-        <select data-field="host_user_id" ${disabled}>
+      <label class="grid-cell" data-label="担当">
+        <select data-field="host_user_id" data-role="reservation-person-select" ${disabled}>
           <option value="">未選択</option>
-          ${getActiveUsers(state).map((user) => option(user.id, user.display_name, user.id === data.host_user_id)).join("")}
+          ${getReservationPersonOptions(data.host_user_id).map((person) => option(person.id, person.label, person.id === data.host_user_id)).join("")}
         </select>
       </label>
       ${textCell("princess_name", "姫名", data.princess_name, disabled)}
-      ${attributeCell("attribute", context.noIvanColumn ? "属性" : "姫属性", data.attribute, disabled)}
+      ${attributeCell("attribute", context.noIvanColumn ? "属性" : "姫属性", staffReservation ? "初回" : data.attribute, disabled, staffReservation)}
       ${context.noIvanColumn ? "" : textCell("ivan_name", "アイバン名", data.ivan_name, disabled)}
-      ${context.noIvanColumn ? "" : attributeCell("ivan_attribute", "アイバン属性", data.ivan_attribute || data.attribute, disabled)}
+      ${context.noIvanColumn ? "" : attributeCell("ivan_attribute", "アイバン属性", staffReservation ? "初回" : data.ivan_attribute || data.attribute, disabled, staffReservation)}
       ${numberCell("purple_count", "パープル", data.purple_count, disabled)}
       ${numberCell("red_count", "レッド", data.red_count, disabled)}
       ${numberCell("blue_count", "ブルー", data.blue_count, disabled)}
@@ -1428,11 +1427,11 @@ function textCell(field, label, value, disabled) {
   return `<label class="grid-cell" data-label="${label}"><input data-field="${field}" value="${escapeAttr(value || "")}" ${disabled}></label>`;
 }
 
-function attributeCell(field, label, value, disabled) {
+function attributeCell(field, label, value, disabled, initialOnly = false) {
   return `
     <label class="grid-cell" data-label="${label}">
-      <select data-field="${field}" ${disabled}>
-        ${ATTRIBUTES.map((attribute) => option(attribute, attribute, attribute === value)).join("")}
+      <select data-field="${field}" data-role="reservation-attribute-select" ${disabled}>
+        ${renderAttributeOptions(value, initialOnly)}
       </select>
     </label>
   `;
@@ -2023,7 +2022,7 @@ function renderArchiveReservationRequestList(requests) {
           ${requests.map((request, index) => `
             <tr>
               <td>#${String(index + 1).padStart(3, "0")}<br>${formatHistoryDateTime(request.created_at)}</td>
-              <td>${escapeHtml(findUser(state, request.host_user_id)?.display_name || "未選択")}</td>
+              <td>${escapeHtml(getReservationPersonName(request.host_user_id))}</td>
               <td>${escapeHtml(REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot)}</td>
               <td>${escapeHtml(formatReservationGuestMeta(request))}</td>
               <td>${escapeHtml([formatRequestDrinks(request), request.memo].filter(Boolean).join(" / "))}</td>
@@ -2043,13 +2042,13 @@ function renderDeletedReservations(deletedReservations) {
       <h3>削除済み予約</h3>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>削除日時</th><th>枠</th><th>担当ホスト</th><th>姫 / アイバン</th><th>メモ</th></tr></thead>
+          <thead><tr><th>削除日時</th><th>枠</th><th>担当</th><th>姫 / アイバン</th><th>メモ</th></tr></thead>
           <tbody>
             ${deletedReservations.map((reservation) => `
               <tr>
                 <td>${formatDateTime(reservation.deleted_at)}</td>
                 <td>${getTimeSlotLabel(reservation.time_slot)} ${reservation.seat_type} ${reservation.group_no}</td>
-                <td>${escapeHtml(findUser(state, reservation.host_user_id)?.display_name || "未選択")}</td>
+                <td>${escapeHtml(getReservationPersonName(reservation.host_user_id))}</td>
                 <td>${escapeHtml(formatReservationGuestMeta(reservation))}</td>
                 <td>${escapeHtml(reservation.memo || "")}</td>
               </tr>
@@ -2068,13 +2067,13 @@ function renderDeletedReservationRequests(deletedRequests) {
       <h3>削除済み予約受付</h3>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>削除日時</th><th>受付</th><th>担当ホスト</th><th>姫 / アイバン</th><th>内容</th><th>扱い</th></tr></thead>
+          <thead><tr><th>削除日時</th><th>受付</th><th>担当</th><th>姫 / アイバン</th><th>内容</th><th>扱い</th></tr></thead>
           <tbody>
             ${deletedRequests.map((request, index) => `
               <tr>
                 <td>${formatDateTime(request.deleted_at)}</td>
                 <td>#${String(index + 1).padStart(3, "0")} / ${escapeHtml(REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot)}</td>
-                <td>${escapeHtml(findUser(state, request.host_user_id)?.display_name || "未選択")}</td>
+                <td>${escapeHtml(getReservationPersonName(request.host_user_id))}</td>
                 <td>${escapeHtml(formatReservationGuestMeta(request))}</td>
                 <td>${escapeHtml([formatRequestDrinks(request), request.memo].filter(Boolean).join(" / "))}</td>
                 <td>${escapeHtml(formatPlacementStatus(request.placement_status))}</td>
@@ -2184,7 +2183,7 @@ function formatHistoryTargetType(history) {
   if (history.target_type === "reservation_setting") return "予約受付設定";
   if (history.target_type === "attendance") return "ホスト勤怠";
   if (history.target_type === "staff_attendance") return "内勤勤怠";
-  if (history.target_type === "drink_plan") return "事前予定";
+  if (history.target_type === "drink_plan") return "事前申請";
   if (history.target_type === "event") return "イベント日";
   if (history.target_type === "user") return "ホスト";
   if (history.target_type === "staff_member") return "内勤";
@@ -2284,7 +2283,7 @@ function renderSeatDetail(slotKey) {
   const emptyGroups = getGroupLabels(seatType)
     .filter((groupNo) => !findReservationBySlot(state, view.eventId, timeSlot, seatType, groupNo));
   const items = reservations.map(({ groupNo, reservation }) => {
-    const hostName = findUser(state, reservation.host_user_id)?.display_name || "未選択";
+    const hostName = getReservationPersonName(reservation.host_user_id);
     const drinks = [
       reservation.tower_count ? "タワー" : "",
       reservation.purple_count ? `P${reservation.purple_count}` : "",
@@ -2311,7 +2310,7 @@ function renderDrinkDetail(drinkKey) {
     .filter((reservation) => Number(reservation[drinkKey === "tower" ? "tower_count" : `${drinkKey}_count`]) > 0)
     .map((reservation) => {
       const count = Number(reservation[drinkKey === "tower" ? "tower_count" : `${drinkKey}_count`]) || 0;
-      const hostName = findUser(state, reservation.host_user_id)?.display_name || "未選択";
+      const hostName = getReservationPersonName(reservation.host_user_id);
       return {
         title: `実予約 ${count}本`,
         meta: [`${getTimeSlotLabel(reservation.time_slot)} ${reservation.seat_type} ${reservation.group_no}`, hostName, formatReservationGuestMeta(reservation), reservation.memo].filter(Boolean).join(" / "),
@@ -2320,8 +2319,8 @@ function renderDrinkDetail(drinkKey) {
   const plans = getDrinkPlansForEvent(state, view.eventId)
     .filter((plan) => plan.item_type === drinkKey)
     .map((plan) => ({
-      title: `事前予定 ${Number(plan.count) || 0}本`,
-      meta: [getTimeSlotLabel(plan.time_slot), findUser(state, plan.host_user_id)?.display_name || "未選択", plan.memo].filter(Boolean).join(" / "),
+      title: `事前申請 ${Number(plan.count) || 0}本`,
+      meta: [getTimeSlotLabel(plan.time_slot), getReservationPersonName(plan.host_user_id), plan.memo].filter(Boolean).join(" / "),
     }));
   return renderDashboardDetailPanel(`${item.label}の内訳`, renderDetailList([...reservations, ...plans], "登録はまだありません。"));
 }
@@ -2425,6 +2424,53 @@ function statusPill(status) {
 
 function option(value, label, selected = false) {
   return `<option value="${escapeAttr(value)}" ${selected ? "selected" : ""}>${escapeHtml(label)}</option>`;
+}
+
+function renderAttributeOptions(selectedValue, initialOnly = false) {
+  const selected = initialOnly ? "初回" : selectedValue;
+  return ATTRIBUTES.map((attribute) => {
+    const disabled = initialOnly && attribute !== "初回";
+    return `<option value="${escapeAttr(attribute)}" ${attribute === selected ? "selected" : ""} ${disabled ? "disabled" : ""}>${escapeHtml(attribute)}</option>`;
+  }).join("");
+}
+
+function getReservationPersonOptions(selectedId = "") {
+  const people = [
+    ...getActiveUsers(state).map((user) => ({ id: user.id, label: user.display_name })),
+    ...getActiveStaffMembers(state).map((member) => ({ id: member.id, label: `${member.display_name}（内勤）` })),
+  ];
+  if (selectedId && !people.some((person) => person.id === selectedId)) {
+    const user = findUser(state, selectedId);
+    const staffMember = findStaffMember(state, selectedId);
+    if (user) people.push({ id: user.id, label: `${user.display_name}（無効）` });
+    if (staffMember) people.push({ id: staffMember.id, label: `${staffMember.display_name}（内勤・無効）` });
+  }
+  return people;
+}
+
+function getReservationPersonName(personId) {
+  if (!personId) return "未選択";
+  const user = findUser(state, personId);
+  if (user) return user.display_name;
+  const staffMember = findStaffMember(state, personId);
+  if (staffMember) return `${staffMember.display_name}（内勤）`;
+  return personId;
+}
+
+function isStaffReservationPersonId(personId) {
+  return Boolean(personId && findStaffMember(state, personId));
+}
+
+function syncStaffReservationAttributeControls(container) {
+  const personField = container?.querySelector("[data-role='reservation-person-select']");
+  if (!personField) return;
+  const initialOnly = isStaffReservationPersonId(personField.value);
+  container.querySelectorAll("[data-role='reservation-attribute-select']").forEach((select) => {
+    select.querySelectorAll("option").forEach((item) => {
+      item.disabled = initialOnly && item.value !== "初回";
+    });
+    if (initialOnly) select.value = "初回";
+  });
 }
 
 function handleClick(event) {
@@ -2677,7 +2723,7 @@ function handleSubmit(event) {
   }
   if (action === "save-drink-plan") {
     const result = upsertDrinkPlan(state, data);
-    applyResult(result, "事前予定を保存しました。");
+    applyResult(result, "事前申請を保存しました。");
   }
 }
 
@@ -2793,6 +2839,11 @@ function handleChange(event) {
     render();
     return;
   }
+  const reservationPerson = event.target.closest("[data-role='reservation-person-select']");
+  if (reservationPerson) {
+    syncStaffReservationAttributeControls(reservationPerson.closest("form") || reservationPerson.closest(".slot-row"));
+    return;
+  }
   const eventDateInput = event.target.closest("[data-role='event-date-input']");
   if (eventDateInput) {
     const form = eventDateInput.closest("form");
@@ -2893,13 +2944,13 @@ function deleteReservationFromRow(button) {
 function deleteDrinkPlanFromButton(button) {
   const planId = button.dataset.planId;
   if (!planId) {
-    showToast("削除する事前予定がありません。", "error");
+    showToast("削除する事前申請がありません。", "error");
     return;
   }
-  const ok = window.confirm("この事前予定を削除します。続行しますか？");
+  const ok = window.confirm("この事前申請を削除します。続行しますか？");
   if (!ok) return;
   const result = deleteDrinkPlan(state, planId);
-  applyResult(result, "事前予定を削除しました。");
+  applyResult(result, "事前申請を削除しました。");
 }
 
 function deleteReservationRequestFromButton(button) {
@@ -3012,7 +3063,7 @@ function summarizeReservationPayload(payload) {
   const slot = [event ? formatDateLabel(event.event_date) : "", getTimeSlotLabel(payload.time_slot), payload.seat_type, payload.group_no]
     .filter(Boolean)
     .join(" ");
-  const hostName = payload.host_user_id ? findUser(state, payload.host_user_id)?.display_name || payload.host_user_id : "未選択";
+  const hostName = payload.host_user_id ? getReservationPersonName(payload.host_user_id) : "未選択";
   const drinks = [
     payload.tower_count ? "タワー" : "",
     payload.purple_count ? `P${payload.purple_count}` : "",
