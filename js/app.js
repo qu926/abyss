@@ -861,6 +861,7 @@ function renderReservationRequestPrototype(eventId, { adminMode = false, locked 
   const buckets = getReservationRequestBuckets(state, eventId);
   const acceptance = getReservationRequestAcceptanceStatus(state, eventId);
   const requestLocked = locked || (!adminMode && acceptance.closed);
+  const drinkPlanLocked = event.status === EVENT_STATUSES[2];
   const editingRequest = adminMode && view.editingReservationRequestId
     ? requests.find((request) => request.id === view.editingReservationRequestId)
     : null;
@@ -873,7 +874,7 @@ function renderReservationRequestPrototype(eventId, { adminMode = false, locked 
       <p class="plan-note">担当者は席を選ばず、受付順に予約を登録します。運営があとから予約枠・保留枠・インスタンスへ振り分けるための仮画面です。内勤の予約は属性が初回に固定されます。</p>
       ${acceptance.closed ? `<div class="notice muted">受付上限 ${acceptance.capacity}件（予約枠${acceptance.reservationCapacity} + 保留枠${acceptance.holdCapacity}）に達しています。新規受付は締切です。</div>` : ""}
       ${adminMode ? renderReservationRequestSettingForm(eventId, setting) : ""}
-      ${renderDrinkPlans(eventId, { locked })}
+      ${renderDrinkPlans(eventId, { locked: drinkPlanLocked })}
       ${renderReservationRequestForm(eventId, setting, requestLocked, editingRequest)}
       ${renderReservationRequestSummaryV2(buckets, setting, acceptance)}
       ${renderReservationRequestBucketsV2(buckets, adminMode)}
