@@ -1293,7 +1293,7 @@ function renderTowerScheduleOverview() {
   return `
     <section class="tower-overview">
       <div class="section-title">
-        <h3>この先のシャンパン・タワー申請状況</h3>
+        <h3>この先のシャンパン・タワー状況</h3>
         <span class="capacity ok">空き日をまとめて確認</span>
       </div>
       <div class="tower-summary-list">
@@ -1304,8 +1304,9 @@ function renderTowerScheduleOverview() {
 }
 
 function renderTowerScheduleItem(event) {
+  const showDrinkPlans = !isReservationRequestOpen(event);
   const actualTotals = getDrinkTotals(state, event.id);
-  const planTotals = getDrinkPlanTotals(state, event.id);
+  const planTotals = showDrinkPlans ? getDrinkPlanTotals(state, event.id) : {};
   const drinkStatuses = DRINK_PLAN_TYPES.map((item) => {
     const actual = actualTotals[item.key] || 0;
     const planned = planTotals[item.key] || 0;
@@ -1326,7 +1327,7 @@ function renderTowerScheduleItem(event) {
   const acceptedRequests = getAcceptedReservationRequestsForEvent(state, event.id).filter((request) => {
     return DRINK_PLAN_TYPES.some((item) => Number(request[item.key === "tower" ? "tower_count" : `${item.key}_count`]) > 0);
   });
-  const plans = getDrinkPlansForEvent(state, event.id);
+  const plans = showDrinkPlans ? getDrinkPlansForEvent(state, event.id) : [];
   return `
     <article class="tower-summary-item ${level}">
       <div class="tower-summary-main">
@@ -1337,7 +1338,7 @@ function renderTowerScheduleItem(event) {
         <span class="capacity ${level}">${activeDrinkTotal} / ${totalLimit} ${activeDrinkTotal === 0 ? "空き" : level === "over" ? "上限超過あり" : level === "full" ? "上限到達あり" : "申請あり"}</span>
       </div>
       <div class="tower-counts">
-        ${drinkStatuses.map((item) => `<span class="${item.level}">${item.label} <strong>${item.total} / ${item.limit}</strong><em>実${item.actual} + 申${item.planned}</em></span>`).join("")}
+        ${drinkStatuses.map((item) => `<span class="${item.level}">${item.label} <strong>${item.total} / ${item.limit}</strong><em>${showDrinkPlans ? `実${item.actual} + 申${item.planned}` : `実${item.actual}`}</em></span>`).join("")}
       </div>
       ${reservations.length || acceptedRequests.length || plans.length ? `
         <ul class="tower-detail-list">
