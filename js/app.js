@@ -27,6 +27,7 @@ import {
   generateReservationDiscordText,
   getActiveEvents,
   getActiveUsers,
+  getAcceptedReservationRequestsForEvent,
   getArchivedEvents,
   getAttendanceEntry,
   getAttendanceEntriesForEvent,
@@ -1322,6 +1323,9 @@ function renderTowerScheduleItem(event) {
   const reservations = getReservationsForEvent(state, event.id).filter((reservation) => {
     return DRINK_PLAN_TYPES.some((item) => Number(reservation[item.key === "tower" ? "tower_count" : `${item.key}_count`]) > 0);
   });
+  const acceptedRequests = getAcceptedReservationRequestsForEvent(state, event.id).filter((request) => {
+    return DRINK_PLAN_TYPES.some((item) => Number(request[item.key === "tower" ? "tower_count" : `${item.key}_count`]) > 0);
+  });
   const plans = getDrinkPlansForEvent(state, event.id);
   return `
     <article class="tower-summary-item ${level}">
@@ -1335,9 +1339,10 @@ function renderTowerScheduleItem(event) {
       <div class="tower-counts">
         ${drinkStatuses.map((item) => `<span class="${item.level}">${item.label} <strong>${item.total} / ${item.limit}</strong><em>実${item.actual} + 申${item.planned}</em></span>`).join("")}
       </div>
-      ${reservations.length || plans.length ? `
+      ${reservations.length || acceptedRequests.length || plans.length ? `
         <ul class="tower-detail-list">
           ${reservations.map((reservation) => renderTowerReservationDetail(reservation)).join("")}
+          ${acceptedRequests.map((request) => renderTowerRequestDetail(request)).join("")}
           ${plans.map((plan) => renderTowerPlanDetail(plan)).join("")}
         </ul>
       ` : `<p class="empty">シャンパン・タワー申請なし</p>`}
@@ -1352,6 +1357,16 @@ function renderTowerReservationDetail(reservation) {
   const drinks = formatReservationDrinkBreakdown(reservation);
   const memo = reservation.memo ? ` / ${reservation.memo}` : "";
   return `<li><span class="inline-pill active">実予約</span><strong>${escapeHtml(slot)}</strong><em>${escapeHtml([hostName, guest, drinks].filter(Boolean).join(" / "))}${escapeHtml(memo)}</em></li>`;
+}
+
+function renderTowerRequestDetail(request) {
+  const hostName = getReservationPersonName(request.host_user_id);
+  const seatType = isReservationRequestIvan(request) ? "アイバン枠" : "通常席";
+  const slot = `${REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot} ${seatType}`;
+  const guest = formatReservationGuestMeta(request);
+  const drinks = formatReservationDrinkBreakdown(request);
+  const memo = request.memo ? ` / ${request.memo}` : "";
+  return `<li><span class="inline-pill active">予約受付</span><strong>${escapeHtml(slot)}</strong><em>${escapeHtml([hostName, guest, drinks].filter(Boolean).join(" / "))}${escapeHtml(memo)}</em></li>`;
 }
 
 function formatReservationDrinkBreakdown(reservation) {
@@ -2366,13 +2381,24 @@ function renderDrinkDetail(drinkKey) {
         meta: [`${getTimeSlotLabel(reservation.time_slot)} ${reservation.seat_type} ${reservation.group_no}`, hostName, formatReservationGuestMeta(reservation), reservation.memo].filter(Boolean).join(" / "),
       };
     });
+  const requests = getAcceptedReservationRequestsForEvent(state, view.eventId)
+    .filter((request) => Number(request[drinkKey === "tower" ? "tower_count" : `${drinkKey}_count`]) > 0)
+    .map((request) => {
+      const count = Number(request[drinkKey === "tower" ? "tower_count" : `${drinkKey}_count`]) || 0;
+      const hostName = getReservationPersonName(request.host_user_id);
+      const seatType = isReservationRequestIvan(request) ? "アイバン枠" : "通常席";
+      return {
+        title: `予約受付 ${count}本`,
+        meta: [`${REQUEST_TIME_SLOT_LABELS[request.desired_time_slot] || request.desired_time_slot} ${seatType}`, hostName, formatReservationGuestMeta(request), request.memo].filter(Boolean).join(" / "),
+      };
+    });
   const plans = getDrinkPlansForEvent(state, view.eventId)
     .filter((plan) => plan.item_type === drinkKey)
     .map((plan) => ({
       title: `事前申請 ${Number(plan.count) || 0}本`,
       meta: [getTimeSlotLabel(plan.time_slot), getReservationPersonName(plan.host_user_id), plan.memo].filter(Boolean).join(" / "),
     }));
-  return renderDashboardDetailPanel(`${item.label}の内訳`, renderDetailList([...reservations, ...plans], "登録はまだありません。"));
+  return renderDashboardDetailPanel(`${item.label}の内訳`, renderDetailList([...reservations, ...requests, ...plans], "登録はまだありません。"));
 }
 
 function renderDashboardDetailPanel(title, body) {

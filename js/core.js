@@ -985,6 +985,17 @@ export function getReservationRequestBuckets(state, eventId) {
   return result;
 }
 
+export function getAcceptedReservationRequestsForEvent(state, eventId) {
+  const buckets = getReservationRequestBuckets(state, eventId);
+  const accepted = new Map();
+  for (const timeSlot of TIME_SLOTS) {
+    for (const request of buckets[timeSlot].reserved) {
+      accepted.set(String(request.id), request);
+    }
+  }
+  return [...accepted.values()].sort(compareReservationRequests);
+}
+
 function createReservationRequestBucket(state, eventId, timeSlot) {
   const normalCapacity = getReservationRequestNormalCapacity(state, eventId, timeSlot);
   const ivanCapacity = getReservationRequestIvanCapacity(state, eventId, timeSlot);
@@ -1126,13 +1137,20 @@ export function getSeatCounts(state, eventId) {
 export function getDrinkTotals(state, eventId) {
   const totals = { tower: 0, purple: 0, red: 0, blue: 0, green: 0 };
   for (const reservation of getReservationsForEvent(state, eventId)) {
-    totals.tower += toCount(reservation.tower_count);
-    totals.purple += toCount(reservation.purple_count);
-    totals.red += toCount(reservation.red_count);
-    totals.blue += toCount(reservation.blue_count);
-    totals.green += toCount(reservation.green_count);
+    addDrinkCounts(totals, reservation);
+  }
+  for (const request of getAcceptedReservationRequestsForEvent(state, eventId)) {
+    addDrinkCounts(totals, request);
   }
   return totals;
+}
+
+function addDrinkCounts(totals, source) {
+  totals.tower += toCount(source.tower_count);
+  totals.purple += toCount(source.purple_count);
+  totals.red += toCount(source.red_count);
+  totals.blue += toCount(source.blue_count);
+  totals.green += toCount(source.green_count);
 }
 
 export function getLimitStatus(total, limit) {

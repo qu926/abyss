@@ -18,6 +18,7 @@ import {
   findReservationBySlot,
   getActiveStaffMembers,
   getActiveUsers,
+  getAcceptedReservationRequestsForEvent,
   getAttendanceEntriesForEvent,
   getAttendanceEntry,
   getAttendanceSummary,
@@ -804,6 +805,77 @@ test('reservation request prototype opens on Wednesday at 22:00 for hosts', () =
   assert.equal(atRequestOpen.ok, true);
   state = atRequestOpen.state;
   assert.equal(getReservationRequestsForEvent(state, event.id).length, 1);
+});
+
+test('drink totals include accepted reservation requests separately from drink plans', () => {
+  let state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const event = activeEvent(state);
+  const hosts = ensureActiveHosts(state, 4);
+
+  const accepted = upsertReservationRequest(
+    state,
+    reservationRequestDraft(event.id, {
+      host_user_id: hosts[0].id,
+      princess_name: 'Accepted drinks',
+      purple_count: 1,
+      tower_count: 1,
+    }),
+    { admin: true, now: '2026-05-03T13:00:00.000Z' },
+  );
+  assert.equal(accepted.ok, true);
+  state = accepted.state;
+
+  const held = upsertReservationRequest(
+    state,
+    reservationRequestDraft(event.id, {
+      host_user_id: hosts[1].id,
+      desired_time_slot: TIME_SLOTS[1],
+      princess_name: 'Held drinks',
+      red_count: 5,
+    }),
+    { admin: true, now: '2026-05-03T13:01:00.000Z' },
+  );
+  assert.equal(held.ok, true);
+  const holdResult = setReservationRequestPlacement(held.state, held.request.id, 'hold', '2026-05-03T13:02:00.000Z');
+  assert.equal(holdResult.ok, true);
+  state = holdResult.state;
+
+  assert.deepEqual(getAcceptedReservationRequestsForEvent(state, event.id).map((request) => request.id), [accepted.request.id]);
+  assert.deepEqual(getDrinkTotals(state, event.id), {
+    tower: 1,
+    purple: 1,
+    red: 0,
+    blue: 0,
+    green: 0,
+  });
+
+  const planned = upsertDrinkPlan(
+    state,
+    {
+      event_date_id: event.id,
+      time_slot: TIME_SLOTS[0],
+      host_user_id: hosts[2].id,
+      item_type: 'red',
+      count: 3,
+      memo: '事前申請',
+    },
+    new Date('2026-05-02T10:00:00+09:00'),
+  );
+  assert.equal(planned.ok, true);
+  assert.deepEqual(getDrinkPlanTotals(planned.state, event.id), {
+    tower: 0,
+    purple: 0,
+    red: 3,
+    blue: 0,
+    green: 0,
+  });
+  assert.deepEqual(getDrinkTotals(planned.state, event.id), {
+    tower: 1,
+    purple: 1,
+    red: 0,
+    blue: 0,
+    green: 0,
+  });
 });
 
 test('drink plans can be entered before reservation open and are tracked separately from actual drink totals', () => {
