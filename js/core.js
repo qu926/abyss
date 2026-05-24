@@ -714,6 +714,7 @@ export function getReservationSetting(state, eventId) {
     instance_count: instanceCount,
     normal_capacity_front: instanceCount === 2 ? toRequestCapacity(setting?.normal_capacity_front, defaultNormalCapacity) : defaultNormalCapacity,
     normal_capacity_back: instanceCount === 2 ? toRequestCapacity(setting?.normal_capacity_back, defaultNormalCapacity) : defaultNormalCapacity,
+    ivan_capacity: instanceCount === 2 ? toIvanCapacity(setting?.ivan_capacity, 4) : RESERVATION_REQUEST_IVAN_CAPACITY_PER_INSTANCE,
     created_at: setting?.created_at || null,
     updated_at: setting?.updated_at || null,
   };
@@ -725,6 +726,12 @@ function toRequestCapacity(value, fallback) {
   return Math.max(0, Math.min(99, Math.floor(count)));
 }
 
+function toIvanCapacity(value, fallback) {
+  const count = Number(value);
+  if (count === 2 || count === 4) return count;
+  return fallback;
+}
+
 export function getReservationRequestNormalCapacity(state, eventId, timeSlot) {
   const setting = getReservationSetting(state, eventId);
   if (timeSlot === TIME_SLOTS[0]) return setting.normal_capacity_front;
@@ -734,7 +741,7 @@ export function getReservationRequestNormalCapacity(state, eventId, timeSlot) {
 
 export function getReservationRequestIvanCapacity(state, eventId, timeSlot) {
   if (!TIME_SLOTS.includes(timeSlot)) return 0;
-  return getReservationSetting(state, eventId).instance_count * RESERVATION_REQUEST_IVAN_CAPACITY_PER_INSTANCE;
+  return getReservationSetting(state, eventId).ivan_capacity;
 }
 
 export function getReservationRequestCapacity(state, eventId, timeSlot) {
@@ -791,6 +798,7 @@ export function upsertReservationSetting(state, input, now = new Date()) {
   const defaultNormalCapacity = instanceCount * RESERVATION_REQUEST_NORMAL_CAPACITY_PER_INSTANCE;
   const normalCapacityFront = instanceCount === 2 ? toRequestCapacity(input.normal_capacity_front, defaultNormalCapacity) : defaultNormalCapacity;
   const normalCapacityBack = instanceCount === 2 ? toRequestCapacity(input.normal_capacity_back, defaultNormalCapacity) : defaultNormalCapacity;
+  const ivanCapacity = instanceCount === 2 ? toIvanCapacity(input.ivan_capacity, 4) : RESERVATION_REQUEST_IVAN_CAPACITY_PER_INSTANCE;
   if (errors.length) return { state, ok: false, errors };
   const existing = draft.reservation_settings.find((item) => String(item.event_date_id) === String(eventId));
   const before = existing ? clone(existing) : null;
@@ -803,6 +811,7 @@ export function upsertReservationSetting(state, input, now = new Date()) {
     instance_count: instanceCount,
     normal_capacity_front: normalCapacityFront,
     normal_capacity_back: normalCapacityBack,
+    ivan_capacity: ivanCapacity,
     updated_at: stamp,
   };
   if (existing) Object.assign(existing, after);

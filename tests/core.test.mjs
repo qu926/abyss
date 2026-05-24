@@ -620,6 +620,7 @@ test('reservation request prototype supports seat capacities, host limits, and m
   let hosts = ensureActiveHosts(state, 30);
 
   assert.equal(getReservationSetting(state, event.id).instance_count, 1);
+  assert.equal(getReservationSetting(state, event.id).ivan_capacity, 2);
   assert.equal(getReservationRequestNormalCapacity(state, event.id, TIME_SLOTS[0]), 8);
   assert.equal(getReservationRequestIvanCapacity(state, event.id, TIME_SLOTS[0]), 2);
   assert.equal(getReservationRequestCapacity(state, event.id, TIME_SLOTS[0]), 10);
@@ -683,10 +684,31 @@ test('reservation request prototype supports seat capacities, host limits, and m
   assert.equal(setting.ok, true);
   state = setting.state;
   assert.equal(getReservationSetting(state, event.id).instance_count, 2);
+  assert.equal(getReservationSetting(state, event.id).ivan_capacity, 4);
   assert.equal(getReservationRequestNormalCapacity(state, event.id, TIME_SLOTS[0]), 18);
   assert.equal(getReservationRequestNormalCapacity(state, event.id, TIME_SLOTS[1]), 19);
   assert.equal(getReservationRequestIvanCapacity(state, event.id, TIME_SLOTS[1]), 4);
   assert.equal(getReservationRequestCapacity(state, event.id, TIME_SLOTS[1]), 23);
+
+  const limitedIvanSetting = upsertReservationSetting(
+    state,
+    { event_date_id: event.id, instance_count: 2, normal_capacity_front: 18, normal_capacity_back: 19, ivan_capacity: 2 },
+    '2026-05-03T13:30:30.000Z',
+  );
+  assert.equal(limitedIvanSetting.ok, true);
+  state = limitedIvanSetting.state;
+  assert.equal(getReservationSetting(state, event.id).ivan_capacity, 2);
+  assert.equal(getReservationRequestIvanCapacity(state, event.id, TIME_SLOTS[0]), 2);
+  assert.equal(getReservationRequestCapacity(state, event.id, TIME_SLOTS[1]), 21);
+
+  const restoredIvanSetting = upsertReservationSetting(
+    state,
+    { event_date_id: event.id, instance_count: 2, normal_capacity_front: 18, normal_capacity_back: 19, ivan_capacity: 4 },
+    '2026-05-03T13:30:45.000Z',
+  );
+  assert.equal(restoredIvanSetting.ok, true);
+  state = restoredIvanSetting.state;
+  assert.equal(getReservationSetting(state, event.id).ivan_capacity, 4);
 
   const thirdIvan = upsertReservationRequest(
     state,

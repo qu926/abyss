@@ -1238,14 +1238,14 @@ textarea:focus {
 
 .request-setting-controls {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.9fr) minmax(140px, auto);
+  grid-template-columns: minmax(220px, 0.9fr) minmax(360px, 1.4fr) minmax(140px, auto);
   align-items: end;
   gap: 12px;
 }
 
 .request-setting-capacities {
   display: grid;
-  grid-template-columns: repeat(2, minmax(110px, 1fr));
+  grid-template-columns: repeat(3, minmax(110px, 1fr));
   gap: 10px;
 }
 
