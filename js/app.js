@@ -88,6 +88,7 @@ import {
 } from "./core.js";
 
 const STORAGE_KEY = "abyss_host_event_manager_v1";
+const PENDING_LOCAL_CHANGES_KEY = "abyss_host_event_manager_pending_local_changes";
 const SITE_SESSION_KEY = "abyss_site_unlocked";
 const ADMIN_SESSION_KEY = "abyss_admin_unlocked";
 const APP_CONFIG = window.ABYSS_CONFIG || {};
@@ -114,6 +115,7 @@ const ADMIN_TABS = new Set([
 ]);
 const RESERVATION_TABS = new Set(["requests", "towers"]);
 
+let hasStoredLocalState = false;
 let state = loadState();
 let syncStatus = getInitialSyncStatus();
 const archiveResult = archiveFinishedEvents(state);
@@ -164,6 +166,7 @@ function loadState() {
     if (!raw) return buildDefaultState();
     const parsed = JSON.parse(raw);
     if (!parsed?.meta || !Array.isArray(parsed.users)) return buildDefaultState();
+    hasStoredLocalState = true;
     return migrateState(parsed);
   } catch (error) {
     console.warn(error);
@@ -276,17 +279,22 @@ function getInitialSyncStatus() {
 async function initializeSharedState() {
   if (syncStatus.mode !== "supabase") return;
   try {
-    const remoteState = await loadSharedState();
-    if (remoteState) {
-      state = migrateState(remoteState);
-      let shouldSaveMigratedState = hasPersistableMigration(remoteState, state);
+    const hasPendingLocalChanges = localStorage.getItem(PENDING_LOCAL_CHANGES_KEY) === "1";
+    const localState = hasStoredLocalState && hasPendingLocalChanges ? state : null;
+    const record = await loadSharedRecord();
+    if (record.state) {
+      const migratedRemoteState = migrateState(record.state);
+      const mergedState = localState ? mergeSharedState(migratedRemoteState, localState) : migratedRemoteState;
+      state = mergedState;
+      let shouldSaveMigratedState = hasPersistableMigration(record.state, migratedRemoteState) || hasPersistableMerge(migratedRemoteState, mergedState);
       const result = archiveFinishedEvents(state);
       if (result.changed) {
         state = result.state;
         shouldSaveMigratedState = true;
       }
-      if (shouldSaveMigratedState) await saveSharedState(state);
+      if (shouldSaveMigratedState) await saveSharedStateWithRetry(state, record.updatedAt);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.removeItem(PENDING_LOCAL_CHANGES_KEY);
       syncStatus = { mode: "supabase", text: "共有DBと同期済み" };
       render();
       return;
@@ -303,6 +311,24 @@ async function initializeSharedState() {
 
 function hasPersistableMigration(before, after) {
   return ["event_dates", "reservations", "reservation_settings", "reservation_requests", "drink_plans"].some((key) => {
+    return JSON.stringify(before[key] || []) !== JSON.stringify(after[key] || []);
+  });
+}
+
+function hasPersistableMerge(before, after) {
+  return [
+    "users",
+    "roles",
+    "staff_members",
+    "long_vacations",
+    "event_dates",
+    "attendance_entries",
+    "staff_attendance_entries",
+    "reservations",
+    "reservation_settings",
+    "reservation_requests",
+    "drink_plans",
+  ].some((key) => {
     return JSON.stringify(before[key] || []) !== JSON.stringify(after[key] || []);
   });
 }
@@ -380,6 +406,24 @@ async function saveSharedStateIfUnchanged(nextState, expectedUpdatedAt) {
   }
 }
 
+async function saveSharedStateWithRetry(nextState, expectedUpdatedAt = "") {
+  let stateToSave = nextState;
+  let expected = expectedUpdatedAt;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await saveSharedState(stateToSave, expected ? { expectedUpdatedAt: expected } : {});
+      return stateToSave;
+    } catch (error) {
+      if (error.code !== "STALE_SHARED_STATE") throw error;
+      const record = await loadSharedRecord();
+      const latestState = record.state ? migrateState(record.state) : null;
+      stateToSave = latestState ? mergeSharedState(latestState, stateToSave) : stateToSave;
+      expected = record.updatedAt;
+    }
+  }
+  throw new Error("STALE_SHARED_STATE");
+}
+
 function getSupabaseHeaders() {
   const headers = { apikey: APP_CONFIG.supabaseAnonKey };
   if (!String(APP_CONFIG.supabaseAnonKey).startsWith("sb_publishable_")) {
@@ -392,8 +436,10 @@ function saveState(nextState, message = "保存しました。") {
   state = nextState;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (syncStatus.mode === "supabase") {
+    localStorage.setItem(PENDING_LOCAL_CHANGES_KEY, "1");
     saveMergedSharedState(state)
       .then(() => {
+        localStorage.removeItem(PENDING_LOCAL_CHANGES_KEY);
         syncStatus = { mode: "supabase", text: "共有DBと同期済み" };
         render();
       })
@@ -408,12 +454,24 @@ function saveState(nextState, message = "保存しました。") {
 }
 
 async function saveMergedSharedState(localState) {
-  const remoteState = await loadSharedState();
-  const migratedRemoteState = remoteState ? migrateState(remoteState) : null;
-  const mergedState = migratedRemoteState ? mergeSharedState(migratedRemoteState, localState) : localState;
-  await saveSharedState(mergedState);
-  state = mergedState;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const record = await loadSharedRecord();
+    const migratedRemoteState = record.state ? migrateState(record.state) : null;
+    const mergedState = migratedRemoteState ? mergeSharedState(migratedRemoteState, localState) : localState;
+    try {
+      await saveSharedState(mergedState, record.updatedAt ? { expectedUpdatedAt: record.updatedAt } : {});
+      state = mergedState;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      return;
+    } catch (error) {
+      if (error.code === "STALE_SHARED_STATE") continue;
+      throw error;
+    }
+  }
+  const record = await loadSharedRecord();
+  state = record.state ? mergeSharedState(migrateState(record.state), localState) : localState;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  throw new Error("STALE_SHARED_STATE");
 }
 
 function archiveEndedEvents() {
