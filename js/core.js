@@ -3,6 +3,8 @@ export const ATTENDANCE_STATUSES = ["出勤", "欠席", "未定", "体入"];
 export const STAFF_ATTENDANCE_STATUSES = ["出勤", "欠席", "未定"];
 export const EVENT_STATUSES = ["受付中", "終了", "休み"];
 export const ATTRIBUTES = ["初回", "リピ", "初回指名", "要確認"];
+export const RESERVATION_ATTRIBUTE = "リピ";
+export const IVAN_ATTRIBUTE = "初回";
 export const TIME_SLOTS = ["前半", "後半"];
 export const REQUEST_TIME_SLOTS = ["前半", "後半", "どちらでも可"];
 export const REQUEST_TIME_SLOT_LABELS = {
@@ -327,10 +329,6 @@ export function findStaffMember(state, staffMemberId) {
   return (state.staff_members || []).find((member) => member.id === staffMemberId) || null;
 }
 
-function isStaffReservationPerson(state, personId) {
-  return Boolean(personId && findStaffMember(state, personId));
-}
-
 export function isOnVacation(state, userId, eventDate) {
   return state.long_vacations.some((vacation) => {
     return (
@@ -547,12 +545,8 @@ export function normalizeReservation(input) {
     host_user_id: input.host_user_id || "",
     princess_name: (input.princess_name || "").trim(),
     ivan_name: (input.ivan_name || "").trim(),
-    attribute: ATTRIBUTES.includes(input.attribute) ? input.attribute : "要確認",
-    ivan_attribute: ATTRIBUTES.includes(input.ivan_attribute)
-      ? input.ivan_attribute
-      : ATTRIBUTES.includes(input.attribute)
-        ? input.attribute
-        : "要確認",
+    attribute: RESERVATION_ATTRIBUTE,
+    ivan_attribute: IVAN_ATTRIBUTE,
     purple_count: toCount(input.purple_count),
     red_count: toCount(input.red_count),
     blue_count: toCount(input.blue_count),
@@ -631,10 +625,6 @@ export function wasReservationChangedAfterEventCutoff(event, reservation) {
 export function upsertReservation(state, input, options = {}) {
   const draft = clone(state);
   const payload = normalizeReservation(input);
-  if (isStaffReservationPerson(draft, payload.host_user_id)) {
-    payload.attribute = "初回";
-    payload.ivan_attribute = "初回";
-  }
   const now = options.now ? new Date(options.now) : new Date();
   const stamp = now.toISOString();
   const event = findEvent(draft, payload.event_date_id);
@@ -837,7 +827,6 @@ export function normalizeReservationRequest(state, input) {
   const eventId = input.event_date_id;
   const allowedTimeSlots = getAllowedRequestTimeSlots(state, eventId);
   const desiredTimeSlot = allowedTimeSlots.includes(input.desired_time_slot) ? input.desired_time_slot : allowedTimeSlots[0];
-  const staffReservation = isStaffReservationPerson(state, input.host_user_id);
   return {
     id: input.id || null,
     event_date_id: eventId,
@@ -845,9 +834,9 @@ export function normalizeReservationRequest(state, input) {
     desired_time_slot: desiredTimeSlot,
     no_same_time_double_booking: false,
     princess_name: (input.princess_name || "").trim(),
-    attribute: staffReservation ? "初回" : ATTRIBUTES.includes(input.attribute) ? input.attribute : "要確認",
+    attribute: RESERVATION_ATTRIBUTE,
     ivan_name: (input.ivan_name || "").trim(),
-    ivan_attribute: staffReservation ? "初回" : ATTRIBUTES.includes(input.ivan_attribute) ? input.ivan_attribute : "要確認",
+    ivan_attribute: IVAN_ATTRIBUTE,
     purple_count: toCount(input.purple_count),
     red_count: toCount(input.red_count),
     blue_count: toCount(input.blue_count),

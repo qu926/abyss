@@ -1,10 +1,11 @@
 import {
   ATTENDANCE_STATUSES,
-  ATTRIBUTES,
   DRINK_LIMITS,
   DRINK_PLAN_TYPES,
   EVENT_STATUSES,
+  IVAN_ATTRIBUTE,
   REQUEST_TIME_SLOT_LABELS,
+  RESERVATION_ATTRIBUTE,
   RESERVATION_SEAT_ORDER,
   SEAT_TYPES,
   SLOT_LIMITS,
@@ -203,11 +204,8 @@ function migrateReservations(reservations, events) {
       updated_at: reservation.updated_at || reservation.created_at || stamp,
       deleted_at: reservation.deleted_at || null,
       is_deleted: Boolean(reservation.is_deleted),
-      ivan_attribute: ATTRIBUTES.includes(reservation.ivan_attribute)
-        ? reservation.ivan_attribute
-        : ATTRIBUTES.includes(reservation.attribute)
-          ? reservation.attribute
-          : "要確認",
+      attribute: RESERVATION_ATTRIBUTE,
+      ivan_attribute: IVAN_ATTRIBUTE,
     };
     if (migrated.late_warning && !wasReservationChangedAfterEventCutoff(event, migrated)) {
       migrated.late_warning = false;
@@ -1008,10 +1006,9 @@ function renderReservationRequestForm(eventId, setting, locked, editingRequest =
   const editing = editingRequest || {};
   const isEditing = Boolean(editingRequest);
   const personOptions = getReservationPersonOptions(editing.host_user_id);
-  const staffReservation = isStaffReservationPersonId(editing.host_user_id);
   const desiredSlot = editing.desired_time_slot || allowedSlots[0];
-  const attribute = staffReservation ? "初回" : editing.attribute || "リピ";
-  const ivanAttribute = staffReservation ? "初回" : editing.ivan_attribute || "リピ";
+  const attribute = RESERVATION_ATTRIBUTE;
+  const ivanAttribute = IVAN_ATTRIBUTE;
   return `
     <form class="reservation-request-form" data-action="save-reservation-request">
       ${isEditing ? `
@@ -1029,9 +1026,9 @@ function renderReservationRequestForm(eventId, setting, locked, editingRequest =
       </div>
       <div class="request-form-row request-guest-row">
         <label><span>姫名</span><input name="princess_name" value="${escapeAttr(editing.princess_name || "")}" ${locked ? "disabled" : ""}></label>
-        <label><span>属性</span><select name="attribute" data-role="reservation-attribute-select" ${locked ? "disabled" : ""}>${renderAttributeOptions(attribute, staffReservation)}</select></label>
+        <label><span>属性</span><select name="attribute" data-role="reservation-attribute-select" ${locked ? "disabled" : ""}>${renderAttributeOptions(attribute, "attribute")}</select></label>
         <label><span>アイバン名</span><input name="ivan_name" value="${escapeAttr(editing.ivan_name || "")}" ${locked ? "disabled" : ""}></label>
-        <label><span>アイバン属性</span><select name="ivan_attribute" data-role="reservation-attribute-select" ${locked ? "disabled" : ""}>${renderAttributeOptions(ivanAttribute, staffReservation)}</select></label>
+        <label><span>アイバン属性</span><select name="ivan_attribute" data-role="reservation-attribute-select" ${locked ? "disabled" : ""}>${renderAttributeOptions(ivanAttribute, "ivan_attribute")}</select></label>
       </div>
       <div class="request-form-row request-drink-row">
         <label><span>パープル</span><input name="purple_count" type="number" min="0" step="1" value="${Number(editing.purple_count) || 0}" ${locked ? "disabled" : ""}></label>
@@ -1503,8 +1500,8 @@ function renderReservationRow(reservation, context) {
     host_user_id: "",
     princess_name: "",
     ivan_name: "",
-    attribute: "リピ",
-    ivan_attribute: "リピ",
+    attribute: RESERVATION_ATTRIBUTE,
+    ivan_attribute: IVAN_ATTRIBUTE,
     purple_count: 0,
     red_count: 0,
     blue_count: 0,
@@ -1512,7 +1509,6 @@ function renderReservationRow(reservation, context) {
     tower_count: 0,
     memo: "",
   };
-  const staffReservation = isStaffReservationPersonId(data.host_user_id);
   const warnings = reservation ? getReservationWarnings(state, reservation) : [];
   const rowClass = warnings.length ? "has-warning" : "";
   return `
@@ -1525,9 +1521,9 @@ function renderReservationRow(reservation, context) {
         </select>
       </label>
       ${textCell("princess_name", "姫名", data.princess_name, disabled)}
-      ${attributeCell("attribute", context.noIvanColumn ? "属性" : "姫属性", staffReservation ? "初回" : data.attribute, disabled, staffReservation)}
+      ${attributeCell("attribute", context.noIvanColumn ? "属性" : "姫属性", data.attribute, disabled)}
       ${context.noIvanColumn ? "" : textCell("ivan_name", "アイバン名", data.ivan_name, disabled)}
-      ${context.noIvanColumn ? "" : attributeCell("ivan_attribute", "アイバン属性", staffReservation ? "初回" : data.ivan_attribute || data.attribute, disabled, staffReservation)}
+      ${context.noIvanColumn ? "" : attributeCell("ivan_attribute", "アイバン属性", data.ivan_attribute, disabled)}
       ${numberCell("purple_count", "パープル", data.purple_count, disabled)}
       ${numberCell("red_count", "レッド", data.red_count, disabled)}
       ${numberCell("blue_count", "ブルー", data.blue_count, disabled)}
@@ -1552,11 +1548,11 @@ function textCell(field, label, value, disabled) {
   return `<label class="grid-cell" data-label="${label}"><input data-field="${field}" value="${escapeAttr(value || "")}" ${disabled}></label>`;
 }
 
-function attributeCell(field, label, value, disabled, initialOnly = false) {
+function attributeCell(field, label, value, disabled) {
   return `
     <label class="grid-cell" data-label="${label}">
       <select data-field="${field}" data-role="reservation-attribute-select" ${disabled}>
-        ${renderAttributeOptions(value, initialOnly)}
+        ${renderAttributeOptions(value, field)}
       </select>
     </label>
   `;
@@ -2568,12 +2564,9 @@ function option(value, label, selected = false) {
   return `<option value="${escapeAttr(value)}" ${selected ? "selected" : ""}>${escapeHtml(label)}</option>`;
 }
 
-function renderAttributeOptions(selectedValue, initialOnly = false) {
-  const selected = initialOnly ? "初回" : selectedValue;
-  return ATTRIBUTES.map((attribute) => {
-    const disabled = initialOnly && attribute !== "初回";
-    return `<option value="${escapeAttr(attribute)}" ${attribute === selected ? "selected" : ""} ${disabled ? "disabled" : ""}>${escapeHtml(attribute)}</option>`;
-  }).join("");
+function renderAttributeOptions(_selectedValue, field = "attribute") {
+  const attribute = field === "ivan_attribute" ? IVAN_ATTRIBUTE : RESERVATION_ATTRIBUTE;
+  return `<option value="${escapeAttr(attribute)}" selected>${escapeHtml(attribute)}</option>`;
 }
 
 function getReservationPersonOptions(selectedId = "") {
@@ -2606,12 +2599,10 @@ function isStaffReservationPersonId(personId) {
 function syncStaffReservationAttributeControls(container) {
   const personField = container?.querySelector("[data-role='reservation-person-select']");
   if (!personField) return;
-  const initialOnly = isStaffReservationPersonId(personField.value);
   container.querySelectorAll("[data-role='reservation-attribute-select']").forEach((select) => {
-    select.querySelectorAll("option").forEach((item) => {
-      item.disabled = initialOnly && item.value !== "初回";
-    });
-    if (initialOnly) select.value = "初回";
+    select.value = select.name === "ivan_attribute" || select.dataset.field === "ivan_attribute"
+      ? IVAN_ATTRIBUTE
+      : RESERVATION_ATTRIBUTE;
   });
 }
 

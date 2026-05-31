@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 
 import {
   ATTENDANCE_STATUSES,
-  ATTRIBUTES,
   DRINK_LIMITS,
   EVENT_STATUSES,
+  IVAN_ATTRIBUTE,
+  RESERVATION_ATTRIBUTE,
   RESERVATION_SEAT_ORDER,
   SEAT_TYPES,
   STAFF_ATTENDANCE_STATUSES,
@@ -109,8 +110,8 @@ function reservationDraft(eventId, overrides = {}) {
     host_user_id: 'u_kai',
     princess_name: 'Alice',
     ivan_name: '',
-    attribute: ATTRIBUTES[0],
-    ivan_attribute: ATTRIBUTES[1],
+    attribute: RESERVATION_ATTRIBUTE,
+    ivan_attribute: IVAN_ATTRIBUTE,
     purple_count: 0,
     red_count: 0,
     blue_count: 0,
@@ -128,9 +129,9 @@ function reservationRequestDraft(eventId, overrides = {}) {
     desired_time_slot: TIME_SLOTS[0],
     no_same_time_double_booking: false,
     princess_name: 'Alice',
-    attribute: ATTRIBUTES[0],
+    attribute: RESERVATION_ATTRIBUTE,
     ivan_name: '',
-    ivan_attribute: ATTRIBUTES[1],
+    ivan_attribute: IVAN_ATTRIBUTE,
     purple_count: 0,
     red_count: 0,
     blue_count: 0,
@@ -462,7 +463,7 @@ test('internal staff attendance is managed separately from host attendance', () 
   assert.equal(restResult.ok, false);
 });
 
-test('internal staff can be assigned to reservations and are forced to first-time attributes', () => {
+test('reservation attributes are fixed for hosts and internal staff', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
   const createdStaff = upsertStaffMember(
@@ -490,8 +491,8 @@ test('internal staff can be assigned to reservations and are forced to first-tim
     { admin: true, now: '2026-05-03T13:00:00.000Z' },
   );
   assert.equal(request.ok, true);
-  assert.equal(request.request.attribute, '初回');
-  assert.equal(request.request.ivan_attribute, '初回');
+  assert.equal(request.request.attribute, RESERVATION_ATTRIBUTE);
+  assert.equal(request.request.ivan_attribute, IVAN_ATTRIBUTE);
   state = request.state;
 
   const reservation = upsertReservation(
@@ -504,8 +505,8 @@ test('internal staff can be assigned to reservations and are forced to first-tim
     { admin: true, now: '2026-05-03T13:05:00.000Z' },
   );
   assert.equal(reservation.ok, true);
-  assert.equal(reservation.reservation.attribute, '初回');
-  assert.equal(reservation.reservation.ivan_attribute, '初回');
+  assert.equal(reservation.reservation.attribute, RESERVATION_ATTRIBUTE);
+  assert.equal(reservation.reservation.ivan_attribute, IVAN_ATTRIBUTE);
 });
 
 test('reservation normalization validates slots, trims guest names, clamps counts, and detects empty drafts', () => {
@@ -524,7 +525,7 @@ test('reservation normalization validates slots, trims guest names, clamps count
     princess_name: '  Alice  ',
     ivan_name: '  Bob  ',
     attribute: 'invalid-attribute',
-    ivan_attribute: ATTRIBUTES[3],
+    ivan_attribute: '要確認',
     purple_count: -1,
     red_count: '3',
     blue_count: 'not-a-number',
@@ -536,8 +537,8 @@ test('reservation normalization validates slots, trims guest names, clamps count
   assert.equal(normalized.group_no, '1');
   assert.equal(normalized.princess_name, 'Alice');
   assert.equal(normalized.ivan_name, 'Bob');
-  assert.equal(normalized.attribute, ATTRIBUTES[ATTRIBUTES.length - 1]);
-  assert.equal(normalized.ivan_attribute, ATTRIBUTES[3]);
+  assert.equal(normalized.attribute, RESERVATION_ATTRIBUTE);
+  assert.equal(normalized.ivan_attribute, IVAN_ATTRIBUTE);
   assert.equal(normalized.purple_count, 0);
   assert.equal(normalized.red_count, 3);
   assert.equal(normalized.blue_count, 0);
@@ -550,10 +551,10 @@ test('reservation normalization validates slots, trims guest names, clamps count
     time_slot: TIME_SLOTS[0],
     seat_type: SEAT_TYPES[1],
     group_no: 'A1',
-    attribute: ATTRIBUTES[2],
+    attribute: '初回指名',
   });
-  assert.equal(legacy.attribute, ATTRIBUTES[2]);
-  assert.equal(legacy.ivan_attribute, ATTRIBUTES[2]);
+  assert.equal(legacy.attribute, RESERVATION_ATTRIBUTE);
+  assert.equal(legacy.ivan_attribute, IVAN_ATTRIBUTE);
 
   assert.equal(
     isReservationFilled(
