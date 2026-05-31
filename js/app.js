@@ -4,6 +4,7 @@ import {
   DRINK_PLAN_TYPES,
   EVENT_STATUSES,
   IVAN_ATTRIBUTE,
+  IVAN_ATTRIBUTES,
   REQUEST_TIME_SLOT_LABELS,
   RESERVATION_ATTRIBUTE,
   RESERVATION_SEAT_ORDER,
@@ -205,7 +206,7 @@ function migrateReservations(reservations, events) {
       deleted_at: reservation.deleted_at || null,
       is_deleted: Boolean(reservation.is_deleted),
       attribute: RESERVATION_ATTRIBUTE,
-      ivan_attribute: IVAN_ATTRIBUTE,
+      ivan_attribute: IVAN_ATTRIBUTES.includes(reservation.ivan_attribute) ? reservation.ivan_attribute : IVAN_ATTRIBUTE,
     };
     if (migrated.late_warning && !wasReservationChangedAfterEventCutoff(event, migrated)) {
       migrated.late_warning = false;
@@ -1008,7 +1009,7 @@ function renderReservationRequestForm(eventId, setting, locked, editingRequest =
   const personOptions = getReservationPersonOptions(editing.host_user_id);
   const desiredSlot = editing.desired_time_slot || allowedSlots[0];
   const attribute = RESERVATION_ATTRIBUTE;
-  const ivanAttribute = IVAN_ATTRIBUTE;
+  const ivanAttribute = IVAN_ATTRIBUTES.includes(editing.ivan_attribute) ? editing.ivan_attribute : IVAN_ATTRIBUTE;
   return `
     <form class="reservation-request-form" data-action="save-reservation-request">
       ${isEditing ? `
@@ -2564,9 +2565,12 @@ function option(value, label, selected = false) {
   return `<option value="${escapeAttr(value)}" ${selected ? "selected" : ""}>${escapeHtml(label)}</option>`;
 }
 
-function renderAttributeOptions(_selectedValue, field = "attribute") {
-  const attribute = field === "ivan_attribute" ? IVAN_ATTRIBUTE : RESERVATION_ATTRIBUTE;
-  return `<option value="${escapeAttr(attribute)}" selected>${escapeHtml(attribute)}</option>`;
+function renderAttributeOptions(selectedValue, field = "attribute") {
+  if (field === "ivan_attribute") {
+    const selected = IVAN_ATTRIBUTES.includes(selectedValue) ? selectedValue : IVAN_ATTRIBUTE;
+    return IVAN_ATTRIBUTES.map((attribute) => option(attribute, attribute, attribute === selected)).join("");
+  }
+  return option(RESERVATION_ATTRIBUTE, RESERVATION_ATTRIBUTE, true);
 }
 
 function getReservationPersonOptions(selectedId = "") {
@@ -2593,9 +2597,11 @@ function syncReservationAttributeControls(container) {
   const personField = container?.querySelector("[data-role='reservation-person-select']");
   if (!personField) return;
   container.querySelectorAll("[data-role='reservation-attribute-select']").forEach((select) => {
-    select.value = select.name === "ivan_attribute" || select.dataset.field === "ivan_attribute"
-      ? IVAN_ATTRIBUTE
-      : RESERVATION_ATTRIBUTE;
+    if (select.name === "ivan_attribute" || select.dataset.field === "ivan_attribute") {
+      select.value = IVAN_ATTRIBUTES.includes(select.value) ? select.value : IVAN_ATTRIBUTE;
+      return;
+    }
+    select.value = RESERVATION_ATTRIBUTE;
   });
 }
 

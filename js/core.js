@@ -5,6 +5,7 @@ export const EVENT_STATUSES = ["受付中", "終了", "休み"];
 export const ATTRIBUTES = ["初回", "リピ", "初回指名", "要確認"];
 export const RESERVATION_ATTRIBUTE = "リピ";
 export const IVAN_ATTRIBUTE = "初回";
+export const IVAN_ATTRIBUTES = ["リピ", "初回"];
 export const TIME_SLOTS = ["前半", "後半"];
 export const REQUEST_TIME_SLOTS = ["前半", "後半", "どちらでも可"];
 export const REQUEST_TIME_SLOT_LABELS = {
@@ -546,7 +547,7 @@ export function normalizeReservation(input) {
     princess_name: (input.princess_name || "").trim(),
     ivan_name: (input.ivan_name || "").trim(),
     attribute: RESERVATION_ATTRIBUTE,
-    ivan_attribute: IVAN_ATTRIBUTE,
+    ivan_attribute: IVAN_ATTRIBUTES.includes(input.ivan_attribute) ? input.ivan_attribute : IVAN_ATTRIBUTE,
     purple_count: toCount(input.purple_count),
     red_count: toCount(input.red_count),
     blue_count: toCount(input.blue_count),
@@ -836,7 +837,7 @@ export function normalizeReservationRequest(state, input) {
     princess_name: (input.princess_name || "").trim(),
     attribute: RESERVATION_ATTRIBUTE,
     ivan_name: (input.ivan_name || "").trim(),
-    ivan_attribute: IVAN_ATTRIBUTE,
+    ivan_attribute: IVAN_ATTRIBUTES.includes(input.ivan_attribute) ? input.ivan_attribute : IVAN_ATTRIBUTE,
     purple_count: toCount(input.purple_count),
     red_count: toCount(input.red_count),
     blue_count: toCount(input.blue_count),

@@ -5,6 +5,7 @@ import {
   DRINK_LIMITS,
   EVENT_STATUSES,
   IVAN_ATTRIBUTE,
+  IVAN_ATTRIBUTES,
   RESERVATION_ATTRIBUTE,
   RESERVATION_SEAT_ORDER,
   SEAT_TYPES,
@@ -463,7 +464,7 @@ test('internal staff attendance is managed separately from host attendance', () 
   assert.equal(restResult.ok, false);
 });
 
-test('reservation attributes are fixed and internal staff cannot be assigned', () => {
+test('guest attributes are fixed, ivan attributes are limited, and internal staff cannot be assigned', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
   const createdStaff = upsertStaffMember(
@@ -490,7 +491,7 @@ test('reservation attributes are fixed and internal staff cannot be assigned', (
   );
   assert.equal(hostRequest.ok, true);
   assert.equal(hostRequest.request.attribute, RESERVATION_ATTRIBUTE);
-  assert.equal(hostRequest.request.ivan_attribute, IVAN_ATTRIBUTE);
+  assert.equal(hostRequest.request.ivan_attribute, 'リピ');
   state = hostRequest.state;
 
   const staffRequest = upsertReservationRequest(
@@ -515,7 +516,7 @@ test('reservation attributes are fixed and internal staff cannot be assigned', (
   );
   assert.equal(hostReservation.ok, true);
   assert.equal(hostReservation.reservation.attribute, RESERVATION_ATTRIBUTE);
-  assert.equal(hostReservation.reservation.ivan_attribute, IVAN_ATTRIBUTE);
+  assert.equal(hostReservation.reservation.ivan_attribute, 'リピ');
 
   const staffReservation = upsertReservation(
     state,
@@ -576,6 +577,7 @@ test('reservation normalization validates slots, trims guest names, clamps count
   assert.equal(normalized.ivan_name, 'Bob');
   assert.equal(normalized.attribute, RESERVATION_ATTRIBUTE);
   assert.equal(normalized.ivan_attribute, IVAN_ATTRIBUTE);
+  assert.deepEqual(IVAN_ATTRIBUTES, ['リピ', '初回']);
   assert.equal(normalized.purple_count, 0);
   assert.equal(normalized.red_count, 3);
   assert.equal(normalized.blue_count, 0);
