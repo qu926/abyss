@@ -900,6 +900,9 @@ export function upsertReservationRequest(state, input, options = {}) {
     errors.push("同じ担当は前半1枠、後半1枠までです。");
   }
   if (!payload.host_user_id) errors.push("担当を選択してください。");
+  if (payload.host_user_id && findStaffMember(draft, payload.host_user_id)) {
+    errors.push("内勤は予約担当にできません。ホストを選択してください。");
+  }
   if (!isReservationRequestFilled(payload)) errors.push("予約内容を入力してください。");
   if (errors.length) return { state, ok: false, errors };
 
@@ -1043,6 +1046,9 @@ export function upsertDrinkPlan(state, input, now = new Date()) {
   if (!event) errors.push("イベント日が見つかりません。");
   if (event && event.status === "休み") errors.push("休み日は事前申請の対象外です。");
   if (!payload.host_user_id) errors.push("担当を選択してください。");
+  if (payload.host_user_id && findStaffMember(draft, payload.host_user_id)) {
+    errors.push("内勤は予約担当にできません。ホストを選択してください。");
+  }
   if (!isDrinkPlanFilled(payload)) errors.push("予定内容を入力してください。");
   if (errors.length) return { state, ok: false, errors };
 
@@ -1113,6 +1119,9 @@ export function validateReservationPayload(state, payload, options = {}) {
   }
   if (duplicate && !payload.id && options.strictDuplicate) {
     errors.push("同じ枠に予約が登録されています。");
+  }
+  if (payload.host_user_id && findStaffMember(state, payload.host_user_id)) {
+    errors.push("内勤は予約担当にできません。ホストを選択してください。");
   }
   return errors;
 }
@@ -1185,10 +1194,7 @@ export function getReservationWarnings(state, reservation) {
     if (!user && !staffMember) {
       warnings.push("担当が見つかりません");
     } else if (staffMember) {
-      const attendance = getStaffAttendanceEntry(state, reservation.event_date_id, reservation.host_user_id);
-      if (!attendance) warnings.push("担当内勤が勤怠未入力です");
-      if (attendance?.status === "欠席") warnings.push("担当内勤が欠席です");
-      if (attendance?.status === "未定") warnings.push("担当内勤が未定です");
+      warnings.push("内勤は予約担当にできません");
     } else if (isOnVacation(state, reservation.host_user_id, event.event_date)) {
       warnings.push("担当ホストが長期休暇中です");
     } else {

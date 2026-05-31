@@ -463,7 +463,7 @@ test('internal staff attendance is managed separately from host attendance', () 
   assert.equal(restResult.ok, false);
 });
 
-test('reservation attributes are fixed for hosts and internal staff', () => {
+test('reservation attributes are fixed and internal staff cannot be assigned', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
   const createdStaff = upsertStaffMember(
@@ -480,33 +480,70 @@ test('reservation attributes are fixed for hosts and internal staff', () => {
   assert.equal(createdStaff.ok, true);
   state = createdStaff.state;
 
-  const request = upsertReservationRequest(
+  const hostRequest = upsertReservationRequest(
     state,
     reservationRequestDraft(event.id, {
-      host_user_id: createdStaff.staffMember.id,
-      attribute: 'リピ',
-      ivan_name: 'Staff Ivan',
+      attribute: '初回',
       ivan_attribute: 'リピ',
     }),
     { admin: true, now: '2026-05-03T13:00:00.000Z' },
   );
-  assert.equal(request.ok, true);
-  assert.equal(request.request.attribute, RESERVATION_ATTRIBUTE);
-  assert.equal(request.request.ivan_attribute, IVAN_ATTRIBUTE);
-  state = request.state;
+  assert.equal(hostRequest.ok, true);
+  assert.equal(hostRequest.request.attribute, RESERVATION_ATTRIBUTE);
+  assert.equal(hostRequest.request.ivan_attribute, IVAN_ATTRIBUTE);
+  state = hostRequest.state;
 
-  const reservation = upsertReservation(
+  const staffRequest = upsertReservationRequest(
     state,
-    reservationDraft(event.id, {
+    reservationRequestDraft(event.id, {
       host_user_id: createdStaff.staffMember.id,
       attribute: 'リピ',
       ivan_attribute: 'リピ',
     }),
+    { admin: true, now: '2026-05-03T13:01:00.000Z' },
+  );
+  assert.equal(staffRequest.ok, false);
+  assert.ok(staffRequest.errors.includes('内勤は予約担当にできません。ホストを選択してください。'));
+
+  const hostReservation = upsertReservation(
+    state,
+    reservationDraft(event.id, {
+      attribute: '初回',
+      ivan_attribute: 'リピ',
+    }),
     { admin: true, now: '2026-05-03T13:05:00.000Z' },
   );
-  assert.equal(reservation.ok, true);
-  assert.equal(reservation.reservation.attribute, RESERVATION_ATTRIBUTE);
-  assert.equal(reservation.reservation.ivan_attribute, IVAN_ATTRIBUTE);
+  assert.equal(hostReservation.ok, true);
+  assert.equal(hostReservation.reservation.attribute, RESERVATION_ATTRIBUTE);
+  assert.equal(hostReservation.reservation.ivan_attribute, IVAN_ATTRIBUTE);
+
+  const staffReservation = upsertReservation(
+    state,
+    reservationDraft(event.id, {
+      host_user_id: createdStaff.staffMember.id,
+      group_no: '2',
+      attribute: 'リピ',
+      ivan_attribute: 'リピ',
+    }),
+    { admin: true, now: '2026-05-03T13:06:00.000Z' },
+  );
+  assert.equal(staffReservation.ok, false);
+  assert.ok(staffReservation.errors.includes('内勤は予約担当にできません。ホストを選択してください。'));
+
+  const staffDrinkPlan = upsertDrinkPlan(
+    state,
+    {
+      event_date_id: event.id,
+      time_slot: TIME_SLOTS[0],
+      host_user_id: createdStaff.staffMember.id,
+      item_type: 'tower',
+      count: 1,
+      memo: '',
+    },
+    new Date('2026-05-03T13:07:00.000Z'),
+  );
+  assert.equal(staffDrinkPlan.ok, false);
+  assert.ok(staffDrinkPlan.errors.includes('内勤は予約担当にできません。ホストを選択してください。'));
 });
 
 test('reservation normalization validates slots, trims guest names, clamps counts, and detects empty drafts', () => {

@@ -950,7 +950,7 @@ function renderReservationRequestPrototype(eventId, { adminMode = false, locked 
         <h3>予約受付方式（仮）</h3>
         <span class="capacity ${acceptance.closed ? "full" : "ok"}">${setting.instance_count}インスタンス / 合計 ${acceptance.total} / ${acceptance.capacity}</span>
       </div>
-      <p class="plan-note">担当者は席を選ばず、受付順に予約を登録します。運営があとから予約枠・保留枠・インスタンスへ振り分けるための仮画面です。内勤の予約は属性が初回に固定されます。</p>
+      <p class="plan-note">担当者は席を選ばず、受付順に予約を登録します。運営があとから予約枠・保留枠・インスタンスへ振り分けるための仮画面です。担当はホストのみ選択できます。</p>
       ${acceptance.closed ? `<div class="notice muted">受付上限 ${acceptance.capacity}件（予約枠${acceptance.reservationCapacity} + 保留枠${acceptance.holdCapacity}）に達しています。新規受付は締切です。</div>` : ""}
       ${adminMode ? renderReservationRequestSettingForm(eventId, setting) : ""}
       ${renderDrinkPlans(eventId, { locked: drinkPlanLocked })}
@@ -2572,13 +2572,10 @@ function renderAttributeOptions(_selectedValue, field = "attribute") {
 function getReservationPersonOptions(selectedId = "") {
   const people = [
     ...getActiveUsers(state).map((user) => ({ id: user.id, label: user.display_name })),
-    ...getActiveStaffMembers(state).map((member) => ({ id: member.id, label: `${member.display_name}（内勤）` })),
   ];
   if (selectedId && !people.some((person) => person.id === selectedId)) {
     const user = findUser(state, selectedId);
-    const staffMember = findStaffMember(state, selectedId);
     if (user) people.push({ id: user.id, label: `${user.display_name}（無効）` });
-    if (staffMember) people.push({ id: staffMember.id, label: `${staffMember.display_name}（内勤・無効）` });
   }
   return people;
 }
@@ -2592,11 +2589,7 @@ function getReservationPersonName(personId) {
   return personId;
 }
 
-function isStaffReservationPersonId(personId) {
-  return Boolean(personId && findStaffMember(state, personId));
-}
-
-function syncStaffReservationAttributeControls(container) {
+function syncReservationAttributeControls(container) {
   const personField = container?.querySelector("[data-role='reservation-person-select']");
   if (!personField) return;
   container.querySelectorAll("[data-role='reservation-attribute-select']").forEach((select) => {
@@ -2981,7 +2974,7 @@ function handleChange(event) {
   }
   const reservationPerson = event.target.closest("[data-role='reservation-person-select']");
   if (reservationPerson) {
-    syncStaffReservationAttributeControls(reservationPerson.closest("form") || reservationPerson.closest(".slot-row"));
+    syncReservationAttributeControls(reservationPerson.closest("form") || reservationPerson.closest(".slot-row"));
     return;
   }
   const eventDateInput = event.target.closest("[data-role='event-date-input']");
