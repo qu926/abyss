@@ -17,6 +17,7 @@ import {
   buildEventDates,
   deleteDrinkPlan,
   deleteReservation,
+  deleteRole,
   findReservationBySlot,
   getActiveStaffMembers,
   getActiveUsers,
@@ -65,7 +66,6 @@ import {
   normalizeDrinkPlan,
   normalizeReservation,
   todayString,
-  setRoleActive,
   setReservationRequestPlacement,
   setStaffMemberActive,
   setUserActive,
@@ -369,7 +369,7 @@ test('hosts can be disabled without removing historical identity', () => {
   assert.ok(getActiveUsers(enabled.state).some((item) => item.id === user.id));
 });
 
-test('custom roles can be created, assigned, disabled, and restored', () => {
+test('custom roles can be created, assigned, and deleted', () => {
   const state = buildDefaultState(new Date(2026, 4, 15, 12));
   const createdRole = upsertRole(state, { name: '幹部候補', is_active: true }, new Date('2026-05-02T10:00:00+09:00'));
   assert.equal(createdRole.ok, true);
@@ -387,14 +387,14 @@ test('custom roles can be created, assigned, disabled, and restored', () => {
   assert.equal(assigned.ok, true);
   assert.equal(assigned.user.role, '幹部候補');
 
-  const disabled = setRoleActive(assigned.state, '幹部候補', false, new Date('2026-05-02T10:10:00+09:00'));
-  assert.equal(disabled.ok, true);
-  assert.ok(!getRoles(disabled.state).some((role) => role.name === '幹部候補'));
-  assert.ok(getRoles(disabled.state, true).some((role) => role.name === '幹部候補' && role.is_active === false));
+  const deleted = deleteRole(assigned.state, '幹部候補', new Date('2026-05-02T10:10:00+09:00'));
+  assert.equal(deleted.ok, true);
+  assert.ok(!getRoles(deleted.state, true).some((role) => role.name === '幹部候補'));
+  assert.equal(deleted.state.users.find((item) => item.id === user.id).role, 'ホスト');
 
-  const restored = setRoleActive(disabled.state, '幹部候補', true, new Date('2026-05-02T10:15:00+09:00'));
-  assert.equal(restored.ok, true);
-  assert.ok(getRoles(restored.state).some((role) => role.name === '幹部候補'));
+  const defaultDelete = deleteRole(deleted.state, 'ホスト', new Date('2026-05-02T10:15:00+09:00'));
+  assert.equal(defaultDelete.ok, false);
+  assert.ok(defaultDelete.errors.includes('標準ロールは削除できません。'));
 });
 
 test('internal staff attendance is managed separately from host attendance', () => {

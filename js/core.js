@@ -1329,6 +1329,38 @@ export function setRoleActive(state, roleName, isActive, now = new Date()) {
   return upsertRole(state, { ...(existing || {}), name: roleName, is_active: isActive }, now);
 }
 
+export function deleteRole(state, roleName, now = new Date()) {
+  const draft = clone(state);
+  draft.roles ||= [];
+  const stamp = new Date(now).toISOString();
+  const name = (roleName || "").trim();
+  if (!name) return { state, ok: false, errors: ["ロール名を指定してください。"] };
+  if (ROLES.includes(name)) return { state, ok: false, errors: ["標準ロールは削除できません。"] };
+
+  const existing = draft.roles.find((role) => role.name === name) || null;
+  const affectedUsers = (draft.users || []).filter((user) => user.role === name);
+  if (!existing && !affectedUsers.length) {
+    return { state, ok: false, errors: ["削除対象のロールが見つかりません。"] };
+  }
+
+  draft.roles = draft.roles.filter((role) => role.name !== name);
+  affectedUsers.forEach((user) => {
+    user.role = "ホスト";
+    user.updated_at = stamp;
+  });
+  pushHistory(
+    draft,
+    "role",
+    existing?.id || `role_${name}`,
+    { role: existing, affected_user_ids: affectedUsers.map((user) => user.id) },
+    { deleted: true, reassigned_role: "ホスト", affected_user_ids: affectedUsers.map((user) => user.id) },
+    stamp,
+    "ロールを削除",
+  );
+  touch(draft, stamp);
+  return { state: draft, ok: true, roleName: name, affectedUsers, errors: [] };
+}
+
 export function upsertVacation(state, input, now = new Date()) {
   const draft = clone(state);
   const stamp = new Date(now).toISOString();

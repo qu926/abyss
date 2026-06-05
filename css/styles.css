@@ -514,6 +514,32 @@ textarea:focus {
   font-weight: 800;
 }
 
+.role-chip-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.collapsed-hosts {
+  margin-top: 14px;
+}
+
+.collapsed-hosts summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--gold);
+  font-weight: 900;
+}
+
+.collapsed-hosts summary::marker {
+  color: var(--gold);
+}
+
+.collapsed-hosts .table-wrap {
+  margin-top: 12px;
+}
+
 .status-欠席 {
   background: var(--red-soft);
   color: var(--red);
